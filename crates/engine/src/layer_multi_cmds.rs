@@ -1315,7 +1315,6 @@ fn merge_layers(s: &mut Session) -> Result<Value> {
             *active = Some(mid);
             return Ok(mid);
         }
-        let buf = photocraft_compose::flatten(&solo);
         let fmt = doc.pixel_format();
         let fmt = PixelFormat::new(fmt.mode, fmt.sample, true);
         let mut merged = Layer::raster(top.name.clone(), fmt);
