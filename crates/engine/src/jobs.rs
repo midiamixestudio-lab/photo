@@ -630,6 +630,9 @@ impl Session {
         if let Some(gate) = self.authorize {
             gate(id, &params)?;
         }
+        if let Some(reason) = crate::channel_transform::refusal(self, id, &params, spec.journal) {
+            return Err(EngineError::Disabled(id.into(), reason.into()));
+        }
         // Last Filter runs as the filter it repeats: journaled, recorded in an action, faded and
         // run as a job like that filter, so a recorded step replays the same filter anywhere
         // (#3089), as Transform Again records its transform (#1440). With no filter yet it falls
@@ -650,6 +653,7 @@ impl Session {
         }
         // Pixel commands follow the Channels panel target unless the caller names one.
         let run_params = crate::channel_cmds::inject_target(self, id, crate::commands::inject_kind(id, params.clone()));
+        let run_params = if crate::channel_transform::geometric(id) { crate::channel_transform::params(self, &run_params)? } else { run_params };
         if let Err(why) = self.explicit_layer_enabled(spec, &params).unwrap_or_else(|| self.precondition(spec, &run_params)) {
             return Err(EngineError::Disabled(id.to_string(), why));
         }

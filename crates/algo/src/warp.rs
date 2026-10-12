@@ -332,7 +332,8 @@ pub fn warp_triangles(src: &Surface, src_rect: Rect, verts: &[([f64; 2], [f64; 2
             any = true;
             let b = o * n;
             for c in 0..a {
-                outp[b + c] = (acc[c] / al).clamp(0.0, 1.0) as f32;
+                let value = acc[c] / al;
+                outp[b + c] = if fmt.sample == photocraft_color::SampleType::F32 { value as f32 } else { value.clamp(0.0, 1.0) as f32 };
             }
             outp[b + a] = al as f32;
         }

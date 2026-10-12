@@ -1,6 +1,6 @@
 # UI parity: tools, handles, modifiers and feel
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (isolated channel transforms and live visibility; smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
 
 How PhotoCraft's direct manipulation compares with Photoshop 2026 (27.11.0): the toolbox, the
 handles and modifier keys of each gesture, nudging, snapping, numeric precision, navigation,
@@ -77,7 +77,8 @@ Triangle and Curvature Pen (minus legacy Rounded Rectangle and Targeted Adjustme
 | Blend mode / opacity edits while transforming | missing | #1384 |
 | Locked layer refused before the drag | missing | fails only at commit (#2585) |
 | Transform a copy (⌥⌘T), step and repeat (⌥⇧⌘T) | done | 2026-10-07 |
-| Transform a targeted alpha channel | missing | BUG-207-4 |
+| Transform a targeted colour component, alpha/spot, Quick Mask or raster mask, including linked masks | done | 2026-10-12: `channel_transform` engine regressions across RGB/CMYK/Lab, native depths, selections, affine/projective/presets/Warp; follows up #2845 / BUG-207-4 |
+| Channel transform freezes its edit target while all eyes stay usable; visibility survives commit/cancel | done | 2026-10-12: `channel_transform_preview` tests and real canvas Ctrl/Cmd+T inside-drag regression |
 | Smart object perspective (non-affine) | done | FILE-215-6; #579 fixed by #426: Distort / Perspective keep a projective placement, re-rendered from the source, read and written as the PSD `nonAffineTransform` |
 | Type-layer transform while editing (⌘ held), no ⌘-corner distort on type | done | `ui-design.md` |
 | Puppet Warp mesh follows the outline | missing | block grid (TOOL-214-6) |
@@ -232,3 +233,4 @@ Paragraph; the rest open as in-app floating windows.
 | 2026-10-12 | minor | Smart filter rows can be selected, and dragged (⌥: copied) onto another smart object or onto Delete (#4271) |
 | 2026-10-12 | minor | Free Transform options bar: H and V skew fields; a sheared box reads as skew instead of a taller H |
 | 2026-10-13 | minor | Smart filter rows can be dragged up or down their stack to reorder the filters |
+| 2026-10-12 | minor | Isolated colour, alpha/spot, Quick Mask and linked/unlinked raster-mask transforms; captured target, live eyes, native-depth preview/commit and undo regressions |
