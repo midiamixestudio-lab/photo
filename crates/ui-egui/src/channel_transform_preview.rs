@@ -20,6 +20,8 @@ pub(crate) struct Preview {
     shown: Arc<Document>,
     view: Option<(ChannelView, bool, u64)>,
     texture: Option<TextureHandle>,
+    gpu: Option<crate::channel_transform_gpu::Preview>,
+    gpu_attempted: bool,
 }
 
 impl Preview {
@@ -33,7 +35,7 @@ impl Preview {
             mask.surface = crate::proxy::downsample(&mask.surface, factor);
         }
         let base = Arc::new(base);
-        Self { shown: base.clone(), base, layer, background, factor, geometry: Value::Null, view: None, texture: None }
+        Self { shown: base.clone(), base, layer, background, factor, geometry: Value::Null, view: None, texture: None, gpu: None, gpu_attempted: false }
     }
 
     pub(crate) fn background(&self) -> [f32; 4] {
@@ -73,10 +75,17 @@ impl Preview {
     }
 
     fn image(&self, view: &ChannelView, in_color: bool, display: Option<&photocraft_engine::display_color::CanvasDisplay>) -> ColorImage {
+        let overlay = match crate::channel_view::render(&self.shown, view, self.shown.bounds(), 1, in_color, self.layer) {
+            // Solo/partial colour views already contain the opaque composite. Do not render it twice.
+            Some(pixels) if pixels.iter().all(|p| p.a() == 255) => {
+                return ColorImage::new([self.shown.size.width as usize, self.shown.size.height as usize], pixels);
+            }
+            overlay => overlay,
+        };
         let buffer = photocraft_compose::flatten(&self.shown);
         let mut image = crate::canvas::display_image(display, &buffer);
         let pixels = &mut image.pixels;
-        if let Some(overlay) = crate::channel_view::render(&self.shown, view, self.shown.bounds(), 1, in_color, self.layer) {
+        if let Some(overlay) = overlay {
             for (base, over) in pixels.iter_mut().zip(overlay) {
                 let weight = u32::from(255 - over.a());
                 let b = base.to_array();
@@ -113,13 +122,32 @@ pub(crate) fn texture(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) 
     if st.doc.id != pv.doc.id {
         return None;
     }
+    let view = st.channel_view.clone();
+    let in_color = app.session.prefs().interface.show_channels_in_color;
+    // Colour mixing is performed on the native layer, before any display conversion. Other
+    // modes/stacks and non-identity monitor transforms retain the CPU compositor oracle.
+    let fast_view = display.as_ref().is_none_or(|d| d.transform.is_none())
+        && view.shown_layer_mask(&preview.base).is_none()
+        && (0..preview.base.channels.len()).all(|i| !view.alpha_shown(i))
+        && (preview.base.quick_mask.is_none() || view.quick_mask_hidden);
+    if let Some(gpu) = &app.gpu
+        && gpu.health().is_ok()
+        && fast_view
+        && t.target.as_ref().is_some_and(|t| t.get("color").is_some())
+    {
+        if !preview.gpu_attempted {
+            preview.gpu = crate::channel_transform_gpu::Preview::new(gpu, &preview.base, preview.layer, preview.background);
+            preview.gpu_attempted = true;
+        }
+        if let Some(tex) = preview.gpu.as_mut().and_then(|g| g.texture(t, &view, in_color, display.as_ref().is_some_and(|d| d.encode_srgb), preview.factor)) {
+            return Some(tex);
+        }
+    }
     if let Err(error) = preview.update(t) {
         app.ui.status = error;
         app.ui.status_error = true;
         return preview.texture.as_ref().map(TextureHandle::id);
     }
-    let view = st.channel_view.clone();
-    let in_color = app.session.prefs().interface.show_channels_in_color;
     if preview.view.as_ref() != Some(&(view.clone(), in_color, display_key)) {
         let image = limit_image(preview.image(&view, in_color, display.as_deref()), ctx.input(|i| i.max_texture_side));
         match preview.texture.as_mut() {
@@ -141,6 +169,141 @@ mod tests {
         Rect,
         warp::{BezierMesh, Warp},
     };
+
+    #[test]
+    fn gpu_colour_preview_matches_cpu_for_depth_selection_geometry_and_eyes() {
+        let rs = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            egui_kittest::wgpu::create_render_state(crate::gpu_canvas::wgpu_setup(), Default::default())
+        }));
+        let Ok(rs) = rs else {
+            eprintln!("no GPU adapter for channel preview readback");
+            return;
+        };
+        let gpu = crate::gpu_canvas::GpuCanvas::new(&rs);
+        eprintln!("channel preview adapter: {:?}", rs.adapter.get_info());
+        for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            for selection in 0..3 {
+                let mut a = app();
+                let mut doc = Document::with_background("GPU oracle", Size::new(32, 24), ColorMode::Rgb, depth, Color::WHITE);
+                doc.layers[0].opacity = 0.7;
+                let s = doc.layers[0].surface_mut().unwrap();
+                for y in 0..24 {
+                    for x in 0..32 {
+                        s.write_pixel(x, y, &[0.1 + x as f32 / 40.0, 0.1 + y as f32 / 32.0, 0.3, 0.75]);
+                    }
+                }
+                if depth == SampleType::F32 {
+                    s.fill_rect(Rect::new(10, 8, 14, 12), &[2.0, -0.2, 0.4, 0.8]);
+                }
+                if selection == 1 {
+                    let mut sel = photocraft_raster::Surface::new(photocraft_color::PixelFormat::new(ColorMode::Grayscale, SampleType::F32, false));
+                    sel.fill_rect(Rect::new(4, 4, 24, 20), &[0.5]);
+                    sel.fill_rect(Rect::new(8, 8, 20, 16), &[1.0]);
+                    doc.selection = Some(sel);
+                }
+                if selection == 2 {
+                    let mut sel = photocraft_raster::Surface::new(photocraft_color::PixelFormat::GRAY8);
+                    sel.fill_rect(doc.bounds(), &[1.0]);
+                    doc.selection = Some(sel);
+                }
+                a.session.add_document(doc, None);
+                a.run("channel.target", json!({"channel":"green"})).unwrap();
+                crate::transform_tool::begin(&mut a, &egui::Context::default()).unwrap();
+                let st = a.session.active().unwrap();
+                let doc = st.doc.clone();
+                let layer = st.active_layer;
+                let (display, _) = crate::canvas::canvas_display(&a, &doc, None);
+                assert!(display.as_ref().unwrap().transform.is_none());
+                let encode = display.as_ref().is_some_and(|d| d.encode_srgb);
+                let fill = [0.15, 0.35, 0.65, 1.0];
+                let mut fast = crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, fill).expect("GPU colour fast path");
+                let initial = a.ui.transform.clone().unwrap();
+                for (geometry, interpolation) in (0..8).flat_map(|g| ["nearest", "bilinear", "bicubic"].map(|i| (g, i))) {
+                    for component in 0..3 {
+                        let mut t = initial.clone();
+                        t.target = Some(json!({"color":component}));
+                        t.interpolation = interpolation.into();
+                        match geometry {
+                            1 => t.quad = t.quad.map(|[x, y]| [x + 3.0, y + 2.0]),
+                            2 => t.quad = t.quad.map(|[x, y]| [x * 0.85 + 2.5, y * 0.9 + 1.25]),
+                            3 => t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0] + 3.0, p[1] + 2.0]), t.rect)),
+                            4 => t.quad = t.quad.map(|[x, y]| [x + 0.1 * y, y + 0.05 * x]),
+                            5 => t.quad = t.quad.map(|[x, y]| [0.94 * x - 0.342 * y + 4.0, 0.342 * x + 0.94 * y]),
+                            6 => {
+                                t.quad[2][0] += 4.0;
+                                t.quad[2][1] += 2.0;
+                            }
+                            7 => {
+                                t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0], p[1] + 0.02 * p[0] * p[0] / 32.0]), t.rect))
+                            }
+                            _ => {}
+                        }
+                        let mut oracle = Preview::new(&doc, layer, fill, false);
+                        oracle.update(&t).unwrap();
+                        for visible in 0..8 {
+                            let mut view = st.channel_view.clone();
+                            // Exercise public eye commands rather than depending on the view representation.
+                            let mut session = Session::new();
+                            session.add_document((*doc).clone(), None);
+                            session.execute("channel.target", json!({"channel":"green"})).unwrap();
+                            session.active_mut().unwrap().channel_transform = st.channel_transform.clone();
+                            for (i, name) in ["red", "green", "blue"].iter().enumerate() {
+                                session.execute("channel.setVisible", json!({"channel":name,"visible": visible & (1<<i) != 0})).unwrap();
+                            }
+                            view.clone_from(&session.active().unwrap().channel_view);
+                            for in_color in [false, true] {
+                                let texture = fast.texture(&t, &view, in_color, encode, 1);
+                                if interpolation == "nearest" && geometry > 1 {
+                                    assert!(texture.is_none(), "fractional nearest sampling uses the CPU oracle");
+                                    continue;
+                                }
+                                texture.unwrap();
+                                let actual = fast.readback();
+                                let expected = oracle.image(&view, in_color, display.as_deref());
+                                let max = actual
+                                    .iter()
+                                    .zip(&expected.pixels)
+                                    .flat_map(|(a, b)| a.to_array().into_iter().zip(b.to_array()).map(|(a, b)| a.abs_diff(b)))
+                                    .max()
+                                    .unwrap();
+                                if max > 2 {
+                                    let (at, (got, want)) = actual
+                                        .iter()
+                                        .zip(&expected.pixels)
+                                        .enumerate()
+                                        .max_by_key(|(_, (a, b))| a.to_array().into_iter().zip(b.to_array()).map(|(a, b)| a.abs_diff(b)).max())
+                                        .unwrap();
+                                    eprintln!("worst pixel {at}: {got:?} != {want:?}; view={view:?}");
+                                }
+                                assert!(
+                                    max <= 2,
+                                    "{depth:?} selection={selection} geometry={geometry} interpolation={interpolation} component={component} eyes={visible} colour={in_color}: max error {max}"
+                                );
+                            }
+                        }
+                    }
+                }
+                assert!(gpu.health().is_ok(), "{:?}", gpu.fault());
+            }
+        }
+        let mut doc = Document::with_background("allocation guard", Size::new(4, 4), ColorMode::Rgb, SampleType::U8, Color::WHITE);
+        let layer = Some(doc.layers[0].id);
+        gpu.set_memory_budget(1);
+        assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
+        gpu.set_memory_budget(256 * 1024 * 1024);
+        doc.size = Size::new(u32::MAX, u32::MAX);
+        assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
+        doc.size = Size::new(4, 4);
+        for coverage in [2.0, f32::NAN, f32::INFINITY] {
+            let mut selection = photocraft_raster::Surface::new(photocraft_color::PixelFormat::new(ColorMode::Grayscale, SampleType::F32, false));
+            selection.fill_rect(doc.bounds(), &[coverage]);
+            doc.selection = Some(selection);
+            assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
+        }
+        doc.selection = None;
+        gpu.health().mark(photocraft_gpu::Fault::Lost("synthetic loss".into()));
+        assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
+    }
 
     fn app() -> PhotocraftApp {
         let mut session = Session::new();

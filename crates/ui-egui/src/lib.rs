@@ -49,6 +49,7 @@ mod canvas_popup;
 pub mod canvas_tool_menu;
 pub mod cas_transform;
 pub mod channel_options_ui;
+mod channel_transform_gpu;
 mod channel_transform_preview;
 pub mod channel_view;
 pub mod channels_panel;

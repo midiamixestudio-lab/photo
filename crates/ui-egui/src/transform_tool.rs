@@ -2367,8 +2367,8 @@ fn draw_warp(painter: &egui::Painter, xf: &ViewXform, t: &TransformSession, w: &
     let scr = |q: [f64; 2]| xf.to_screen(q[0] as f32, q[1] as f32);
     let r = t.rect;
     let m = w.to_mesh(1, 1);
-    let (us, vs) = crate::warp_preview::samples(&m, xf.zoom as f64);
     if pv.channel.is_none() {
+        let (us, vs) = crate::warp_preview::samples(&m, xf.zoom as f64);
         let (tex, uv) = pv.texture.pick(painter.ctx(), xf.zoom * painter.ctx().pixels_per_point(), 1.0, t.interpolation == "nearest");
         let mut mesh = egui::Mesh::with_texture(tex);
         let tint = Color32::from_white_alpha((pv.opacity.clamp(0.0, 1.0) * 255.0) as u8);
