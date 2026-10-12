@@ -36,6 +36,9 @@ pub(crate) struct Preview {
     opacity: f32,
     steps: f32,
     fill: [f32; 4],
+    content: [photocraft_geom::Rect; 3],
+    lifted: [photocraft_geom::Rect; 3],
+    selection: Option<photocraft_geom::Rect>,
     selected: bool,
     last: Option<(TransformSession, ChannelView, bool, bool)>,
     vertices: wgpu::Buffer,
@@ -71,6 +74,14 @@ impl Preview {
     pub(crate) fn new(gpu: &crate::gpu_canvas::GpuCanvas, doc: &Document, layer: Option<LayerId>, fill: [f32; 4]) -> Option<Self> {
         let l = source(doc, layer)?;
         let surf = l.surface()?;
+        let selection_bounds = doc.selection.as_ref().map(photocraft_raster::Surface::content_bounds);
+        if doc.selection.as_ref().is_some_and(|s| s.default_pixel().first().copied().unwrap_or(0.0) != 0.0)
+            || selection_bounds.is_some_and(|b| !doc.bounds().contains_rect(&b))
+        {
+            // The CPU can lift default-valued selected samples outside the canvas. They are
+            // not in this document-sized upload and must not disappear from its preview.
+            return None;
+        }
         let size = [doc.size.width, doc.size.height];
         let rs = gpu.render_state();
         let limit = rs.device.limits().max_texture_dimension_2d;
@@ -110,16 +121,49 @@ impl Preview {
         let input_usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
         let rgb = texture("channel source", FLOAT, input_usage);
         let selection = texture("channel selection", wgpu::TextureFormat::R32Float, input_usage);
+        let steps = match doc.depth {
+            SampleType::U8 => 255.0,
+            SampleType::U16 => 65535.0,
+            SampleType::F32 => 0.0,
+        };
+        let fill = fill.map(|v| if steps > 0.0 { (v.clamp(0.0, 1.0) * steps + 0.5).floor() / steps } else { v });
+        let mut content = [photocraft_geom::Rect::EMPTY; 3];
+        let mut lifted = [photocraft_geom::Rect::EMPTY; 3];
         // Upload bounded bands at native precision, once. No RGBA8 conversion of HDR samples.
         for y in (0..size[1]).step_by(32) {
             let rows = (size[1] - y).min(32);
             let r = photocraft_geom::Rect::from_xywh(0, y as i32, size[0], rows);
             let native = surf.try_read_region(r).ok()?;
+            let values = match &doc.selection {
+                Some(s) => s.try_read_region(r).ok()?,
+                None => vec![1.0; (size[0] as usize).checked_mul(rows as usize)?],
+            };
+            if values.len() != (size[0] as usize).checked_mul(rows as usize)? || values.iter().any(|v| !(0.0..=1.0).contains(v)) {
+                return None;
+            }
             let channels = surf.channels();
             let mut rgba = Vec::new();
             rgba.try_reserve_exact(native.len().checked_div(channels)?.checked_mul(4)?).ok()?;
-            for p in native.chunks_exact(channels) {
-                rgba.extend_from_slice(p.get(..3)?);
+            for (i, p) in native.chunks_exact(channels).enumerate() {
+                let colors = p.get(..3)?;
+                rgba.extend_from_slice(colors);
+                let x = (i % size[0] as usize) as i32;
+                let y = (i / size[0] as usize) as i32 + y as i32;
+                let pixel = photocraft_geom::Rect::new(x, y, x + 1, y + 1);
+                let weight = *values.get(i)?;
+                let coverage = if steps > 0.0 { (weight * steps + 0.5).floor() / steps } else { weight };
+                // Match the extracted scalar plane's encoded default, including F32 signed
+                // zero. Cache its bounds during upload rather than scanning while dragging.
+                for (c, value) in colors.iter().enumerate() {
+                    if value.to_bits() != fill.get(c)?.to_bits() {
+                        let bounds = content.get_mut(c)?;
+                        *bounds = bounds.union(&pixel);
+                    }
+                    if selection_bounds.is_some_and(|b| b.contains(x, y)) && (value.to_bits() != 0 || coverage.to_bits() != 0) {
+                        let bounds = lifted.get_mut(c)?;
+                        *bounds = bounds.union(&pixel);
+                    }
+                }
                 let alpha = p.get(3).copied().unwrap_or(1.0);
                 if !(0.0..=1.0).contains(&alpha) {
                     return None;
@@ -130,13 +174,6 @@ impl Preview {
                 return None;
             }
             write_band(rs, &rgb, size[0], y, rows, 4, &rgba);
-            let values = match &doc.selection {
-                Some(s) => s.try_read_region(r).ok()?,
-                None => vec![1.0; (size[0] as usize).checked_mul(rows as usize)?],
-            };
-            if values.len() != (size[0] as usize).checked_mul(rows as usize)? || values.iter().any(|v| !(0.0..=1.0).contains(v)) {
-                return None;
-            }
             write_band(rs, &selection, size[0], y, rows, 1, &values);
         }
         let render_usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT;
@@ -173,12 +210,6 @@ impl Preview {
                 mapped_at_creation: false,
             })
         };
-        let steps = match doc.depth {
-            SampleType::U8 => 255.0,
-            SampleType::U16 => 65535.0,
-            SampleType::F32 => 0.0,
-        };
-        let fill = fill.map(|v| if steps > 0.0 { (v.clamp(0.0, 1.0) * steps + 0.5).floor() / steps } else { v });
         Some(Self {
             rs: rs.clone(),
             pipes,
@@ -193,6 +224,9 @@ impl Preview {
             opacity: l.opacity.clamp(0.0, 1.0) * l.fill_opacity.clamp(0.0, 1.0),
             steps,
             fill,
+            content,
+            lifted,
+            selection: selection_bounds,
             selected: doc.selection.is_some(),
             last: None,
             vertices: buffer("channel warp vertices", wgpu::BufferUsages::VERTEX),
@@ -217,8 +251,25 @@ impl Preview {
             return None;
         }
         let inv = h.inverse()?;
+        let frame = photocraft_geom::Rect::new(rect[0].floor() as i32, rect[1].floor() as i32, rect[2].ceil() as i32, rect[3].ceil() as i32);
+        let source_bounds = if self.selected {
+            if t.warp.is_some() && !frame.contains_rect(&self.selection?) {
+                return None;
+            }
+            *self.lifted.get(component as usize)?
+        } else if t.warp.is_none() {
+            *self.content.get(component as usize)?
+        } else {
+            if frame != photocraft_geom::Rect::from_xywh(0, 0, self.size[0], self.size[1]) {
+                // A smaller frame clips the vacated region; a larger one lifts default
+                // samples outside the upload. Both need the CPU's framed coverage.
+                return None;
+            }
+            frame
+        };
+        let source_rect = [source_bounds.x0, source_bounds.y0, source_bounds.x1, source_bounds.y1].map(f64::from);
         // The CPU oracle prefilters strong reductions. Retain it until that filter is on GPU.
-        if h.local_scale((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5) < 0.5 {
+        if h.local_scale((source_rect[0] + source_rect[2]) * 0.5, (source_rect[1] + source_rect[3]) * 0.5) < 0.5 {
             return None;
         }
         let mut interp = match t.interpolation.as_str() {
@@ -244,15 +295,16 @@ impl Preview {
             data.push(0.0);
         }
         data.extend([self.size[0] as f32, self.size[1] as f32, component as f32, *self.fill.get(component as usize)?]);
-        data.extend(rect.map(|v| v as f32));
+        data.extend(source_rect.map(|v| v as f32));
         let visible = (0..3).fold(0u32, |v, c| v | (u32::from(view.color_visible(c)) << c));
         data.extend([visible as f32, f32::from(in_color), self.opacity, f32::from(encode)]);
-        data.extend([interp, f32::from(self.selected), self.steps, f32::from(h.is_identity() && t.warp.as_ref().is_none_or(|w| w.is_identity()))]);
+        let identity = t.warp.as_ref().map_or_else(|| h.is_identity(), photocraft_geom::warp::Warp::is_identity);
+        data.extend([interp, f32::from(self.selected), self.steps, f32::from(identity)]);
         if data.iter().any(|v| !v.is_finite()) {
             return None;
         }
         let geometry = match &t.warp {
-            Some(w) => Some(warp_geometry(w, rect, k)?),
+            Some(w) => Some(warp_geometry(w, source_rect, k)?),
             None => None,
         };
         self.rs.queue.write_buffer(&self.uniform, 0, &bytes(&data));
@@ -362,17 +414,37 @@ fn warp_geometry(w: &photocraft_geom::warp::Warp, rect: [f64; 4], factor: f64) -
     if !mesh.is_valid() {
         return None;
     }
-    let (us, vs) = crate::warp_preview::samples(&mesh, 1.5 / factor);
+    // The scalar CPU oracle lifts an integer source region before tessellation, including
+    // the enclosing pixels of fractional proxy frames.
+    let bounds = photocraft_geom::Rect::new(rect[0] as i32, rect[1] as i32, rect[2] as i32, rect[3] as i32);
+    let affine = mesh.us.len() == 2
+        && mesh.vs.len() == 2
+        && rect[0] * factor >= w.bounds[0]
+        && rect[1] * factor >= w.bounds[1]
+        && rect[2] * factor <= w.bounds[2]
+        && rect[3] * factor <= w.bounds[3]
+        && mesh.points.first().zip(mesh.points.get(3)).zip(mesh.points.get(12)).is_some_and(|((o, x), y)| {
+            mesh.points.iter().enumerate().all(|(i, p)| {
+                p.iter().zip(o).zip(x).zip(y).all(|(((p, o), x), y)| (p - (o + (x - o) * (i % 4) as f64 / 3.0 + (y - o) * (i / 4) as f64 / 3.0)).abs() < 1e-9)
+            })
+        });
+    // An affine Bezier patch has identical sampling through any tessellation. Keep translations,
+    // scaling and shear cheap; curved maps use exactly the CPU oracle's source grid.
+    let (nx, ny) = if affine { (1, 1) } else { photocraft_algo::warp::mesh_grid(bounds) };
+    let us: Vec<f64> = (0..=nx).map(|i| i as f64 / nx as f64).collect();
+    let vs: Vec<f64> = (0..=ny).map(|i| i as f64 / ny as f64).collect();
     let mut vertices = Vec::with_capacity(us.len().checked_mul(vs.len())?.checked_mul(4)?);
+    let mut mapped = Vec::with_capacity(us.len().checked_mul(vs.len())?);
     for v in &vs {
         for u in &us {
             let src = [rect[0] + u * (rect[2] - rect[0]), rect[1] + v * (rect[3] - rect[1])];
             let dst = w.map(src[0] * factor, src[1] * factor);
-            let dst = [dst.0 as f32 / factor as f32, dst.1 as f32 / factor as f32];
-            if dst.iter().any(|v| !v.is_finite()) {
+            let dst = [dst.0 / factor, dst.1 / factor];
+            if dst.iter().any(|v| !v.is_finite() || !(*v as f32).is_finite()) {
                 return None;
             }
-            vertices.extend([dst[0], dst[1], src[0] as f32, src[1] as f32]);
+            mapped.push(dst);
+            vertices.extend([dst[0] as f32, dst[1] as f32, src[0] as f32, src[1] as f32]);
         }
     }
     // Strong reductions/folds need the CPU oracle's footprint filter. Also retain the
@@ -383,8 +455,9 @@ fn warp_geometry(w: &photocraft_geom::warp::Warp, rect: [f64; 4], factor: f64) -
             let a = u32::try_from(j.checked_mul(us.len())?.checked_add(i)?).ok()?;
             let stride = u32::try_from(us.len()).ok()?;
             let point = |v: u32| -> Option<[f64; 2]> {
-                let offset = usize::try_from(v).ok()?.checked_mul(4)?;
-                Some([f64::from(*vertices.get(offset)?), f64::from(*vertices.get(offset.checked_add(1)?)?)])
+                // Decide CPU filtering from unrounded geometry. f32 vertex rounding can
+                // otherwise move a near-threshold footprint below the two-sample boundary.
+                mapped.get(usize::try_from(v).ok()?).copied()
             };
             let right_index = a.checked_add(1)?;
             let bottom_index = a.checked_add(stride)?;
@@ -400,9 +473,11 @@ fn warp_geometry(w: &photocraft_geom::warp::Warp, rect: [f64; 4], factor: f64) -
                 let x = [(x1[0] - x0[0]) / dx, (x1[1] - x0[1]) / dx];
                 let y = [(y1[0] - y0[0]) / dy, (y1[1] - y0[1]) / dy];
                 let determinant = x[0] * y[1] - x[1] * y[0];
-                let trace = x[0] * x[0] + x[1] * x[1] + y[0] * y[0] + y[1] * y[1];
-                let least = ((trace - (trace * trace - 4.0 * determinant * determinant).max(0.0).sqrt()) * 0.5).max(0.0).sqrt();
-                if !least.is_finite() || determinant <= 0.0 || least < 0.5 {
+                // warp_triangles starts bilinear footprint averaging when either inverse
+                // axis length rounds to two samples. A single GPU sample must not alias it.
+                let footprint_x = y[1].hypot(x[1]) / determinant;
+                let footprint_y = y[0].hypot(x[0]) / determinant;
+                if !determinant.is_finite() || determinant <= 0.0 || footprint_x >= 1.5 - 1e-6 || footprint_y >= 1.5 - 1e-6 {
                     return None;
                 }
             }
@@ -562,10 +637,14 @@ mod tests {
         let rect = [0.0, 0.0, 32.0, 24.0];
         let m = BezierMesh::identity(rect, 1, 1);
         assert!(warp_geometry(&Warp::custom(m.clone(), rect), rect, 1.0).is_some());
-        for scale in [-1.0, 0.0, 0.2, f64::NAN, f64::INFINITY] {
+        for scale in [-1.0, 0.0, 0.2, 0.55, 0.6, 0.65, 2.0 / 3.0, f64::NAN, f64::INFINITY] {
             let w = Warp::custom(m.map_points(|p| [p[0] * scale, p[1]]), rect);
             assert!(warp_geometry(&w, rect, 1.0).is_none(), "scale={scale}");
         }
+        let w = Warp::custom(m.map_points(|p| [p[0] * 0.75, p[1] * 0.75]), rect);
+        assert!(warp_geometry(&w, rect, 1.0).is_some());
+        let w = Warp::custom(m.map_points(|p| [100_000.0 + p[0] * 0.66666, p[1]]), rect);
+        assert!(warp_geometry(&w, rect, 1.0).is_none(), "rounding vertices must not bypass the CPU footprint filter");
         let mut folded = m.clone();
         *folded.points.last_mut().unwrap() = [0.0, 0.0];
         assert!(warp_geometry(&Warp::custom(folded, rect), rect, 1.0).is_none());

@@ -184,7 +184,12 @@ fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, 
     if let Some(m) = l.mask.as_mut()
         && m.linked
     {
-        m.surface = warp_scalar(&m.surface, mask_sel, rect, w, interp)?;
+        m.surface = match mask_sel {
+            Some(sel) => warp_scalar(&m.surface, Some(sel), rect, w, interp)?,
+            // Whole-layer transforms carry the complete linked mask, whose content can
+            // extend beyond the layer's pixel bounds (or the explicit warp frame).
+            None => warp_scalar(&m.surface, None, m.surface.content_bounds(), w, interp)?,
+        };
     }
     if let Some(vm) = l.vector_mask.as_mut()
         && vm.linked

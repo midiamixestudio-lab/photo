@@ -378,6 +378,51 @@ fn isolated_warp_preserves_samples_outside_an_explicit_frame() {
 }
 
 #[test]
+fn whole_layer_warp_carries_linked_mask_content_outside_its_frame() {
+    for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+        for smart in [false, true] {
+            let mut s = session(ColorMode::Rgb, depth);
+            s.edit("small pixels", |doc, active| {
+                let l = doc.layer_mut(active.unwrap()).unwrap();
+                let mut pixels = Surface::new(l.surface().unwrap().format());
+                pixels.fill_rect(Rect::new(2, 2, 5, 5), &[0.2, 0.4, 0.6, 1.0]);
+                l.content = LayerContent::Raster(pixels);
+                Ok(())
+            })
+            .unwrap();
+            if smart {
+                s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
+                // Whole smart objects carry the entire linked mask even with a selection.
+                selection(&mut s, 2);
+            }
+            s.edit("outlying linked mask", |doc, active| {
+                let mut mask = LayerMask::reveal_all();
+                mask.surface = Surface::with_default(PixelFormat::new(ColorMode::Grayscale, depth, false), &[1.0]);
+                mask.surface.fill_rect(Rect::new(8, 2, 11, 5), &[0.0]);
+                doc.layer_mut(active.unwrap()).unwrap().mask = Some(mask);
+                Ok(())
+            })
+            .unwrap();
+            let before = s.active().unwrap().doc.clone();
+            let rect = [2.0, 2.0, 5.0, 5.0];
+            // The explicit pixel frame is smaller than the map's domain. Linked masks are
+            // transformed in their entirety, rather than clipped to that pixel frame.
+            let bounds = [0.0, 0.0, 12.0, 8.0];
+            let w = Warp::custom(BezierMesh::identity(bounds, 1, 1).map_points(|p| [p[0], p[1] + 3.0]), bounds);
+            s.execute("edit.transform.warp", json!({"target":"pixels","rect":rect,"warp":w,"interpolation":"nearest"})).unwrap();
+            let after = s.active().unwrap().doc.clone();
+            let mask = &after.layers[0].mask.as_ref().unwrap().surface;
+            assert_eq!(mask.sample_channel(8, 2, 0), 1.0, "{depth:?}/{smart}: old mask clears");
+            assert_eq!(mask.sample_channel(8, 5, 0), 0.0, "{depth:?}/{smart}: outlying mask follows");
+            assert!(s.undo());
+            assert_eq!(s.active().unwrap().doc.layers, before.layers);
+            assert!(s.redo());
+            assert_eq!(s.active().unwrap().doc.layers, after.layers);
+        }
+    }
+}
+
+#[test]
 fn whole_smart_object_warp_moves_all_of_its_linked_mask_with_a_selection() {
     let mut s = session(ColorMode::Rgb, SampleType::U8);
     s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();

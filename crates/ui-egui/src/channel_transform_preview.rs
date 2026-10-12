@@ -171,6 +171,102 @@ mod tests {
     };
 
     #[test]
+    fn gpu_sparse_and_high_frequency_channels_match_the_cpu_or_fall_back() {
+        let Ok(rs) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            egui_kittest::wgpu::create_render_state(crate::gpu_canvas::wgpu_setup(), Default::default())
+        })) else {
+            eprintln!("no GPU adapter for channel preview readback");
+            return;
+        };
+        let gpu = crate::gpu_canvas::GpuCanvas::new(&rs);
+        for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            for pattern in 0..2 {
+                for selection in 0..3 {
+                    let mut doc = Document::with_background("scalar edge oracle", Size::new(32, 24), ColorMode::Rgb, depth, Color::WHITE);
+                    let s = doc.layers[0].surface_mut().unwrap();
+                    if pattern == 0 {
+                        s.fill_rect(Rect::new(8, 8, 16, 16), &[0.5, 1.0, 1.0, 1.0]);
+                    } else {
+                        for y in 0..24 {
+                            for x in 0..32 {
+                                s.write_pixel(x, y, &[((x + y) % 2) as f32, 1.0, 1.0, 1.0]);
+                            }
+                        }
+                    }
+                    if selection != 0 {
+                        let mut sel = photocraft_raster::Surface::new(photocraft_color::PixelFormat::new(ColorMode::Grayscale, SampleType::F32, false));
+                        sel.fill_rect(doc.bounds(), &[1.0]);
+                        if selection == 2 {
+                            sel.fill_rect(Rect::new(0, 0, 16, 24), &[0.5]);
+                        }
+                        doc.selection = Some(sel);
+                    }
+                    let mut a = app();
+                    a.session.add_document(doc, None);
+                    a.run("channel.target", json!({"channel":"red"})).unwrap();
+                    a.run("channel.setVisible", json!({"channel":"composite","visible":true})).unwrap();
+                    crate::transform_tool::begin(&mut a, &egui::Context::default()).unwrap();
+                    let st = a.session.active().unwrap();
+                    let doc = &st.doc;
+                    let fill = [1.0; 4];
+                    let mut fast = crate::channel_transform_gpu::Preview::new(&gpu, doc, st.active_layer, fill).unwrap();
+                    for interpolation in ["bilinear", "bicubic"] {
+                        for geometry in 0..8 {
+                            let mut t = a.ui.transform.clone().unwrap();
+                            t.interpolation = interpolation.into();
+                            let factor = if geometry == 4 { 3 } else { 1 };
+                            match geometry {
+                                0 => t.quad = t.quad.map(|[x, y]| [x + 0.25, y + 0.25]),
+                                1 | 2 => {
+                                    let scale = if geometry == 1 { 0.6 } else { 0.75 };
+                                    t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0] * scale, p[1] * scale]), t.rect));
+                                }
+                                3 => t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0], p[1] + 0.02 * p[0] * p[0]]), t.rect)),
+                                4 => {
+                                    // An integer full-resolution selection becomes a fractional
+                                    // proxy frame. CPU lifting encloses its boundary pixels.
+                                    t.rect = [1.0, 1.0, 95.0, 71.0];
+                                    let [x0, y0, x1, y1] = t.rect;
+                                    t.quad = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+                                    t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0] + 0.75, p[1] + 0.75]), t.rect));
+                                }
+                                5 => {
+                                    t.quad = t.quad.map(|[x, y]| [x + 3.0, y + 2.0]);
+                                    t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1), t.rect));
+                                }
+                                _ => {
+                                    t.rect = if geometry == 6 { [-4.0, -4.0, 36.0, 28.0] } else { [4.0, 4.0, 28.0, 20.0] };
+                                    let [x0, y0, x1, y1] = t.rect;
+                                    t.quad = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+                                    t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0] + 0.25, p[1] + 0.25]), t.rect));
+                                }
+                            }
+                            let texture = fast.texture(&t, &st.channel_view, false, false, factor);
+                            if geometry == 1 || (geometry == 6 && selection == 0) || geometry == 7 {
+                                assert!(texture.is_none(), "shrinking or explicitly clipped Warp needs the CPU oracle");
+                                continue;
+                            }
+                            texture.unwrap();
+                            let actual = fast.readback();
+                            let mut oracle = Preview::new(doc, st.active_layer, fill, false);
+                            oracle.factor = factor;
+                            oracle.update(&t).unwrap();
+                            let expected = oracle.image(&st.channel_view, false, None);
+                            let max = actual
+                                .iter()
+                                .zip(&expected.pixels)
+                                .flat_map(|(a, b)| a.to_array().into_iter().zip(b.to_array()).map(|(a, b)| a.abs_diff(b)))
+                                .max()
+                                .unwrap();
+                            assert!(max <= 2, "{depth:?}/{pattern}/{selection}/{interpolation}/{geometry}: max error {max}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn gpu_colour_preview_matches_cpu_for_depth_selection_geometry_and_eyes() {
         let rs = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             egui_kittest::wgpu::create_render_state(crate::gpu_canvas::wgpu_setup(), Default::default())
@@ -300,6 +396,12 @@ mod tests {
             doc.selection = Some(selection);
             assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
         }
+        let mut outside = photocraft_raster::Surface::new(photocraft_color::PixelFormat::GRAY8);
+        outside.fill_rect(Rect::new(-2, 0, 4, 4), &[1.0]);
+        doc.selection = Some(outside);
+        assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none(), "off-canvas selected defaults use the CPU oracle");
+        doc.selection = Some(photocraft_raster::Surface::with_default(photocraft_color::PixelFormat::GRAY8, &[1.0]));
+        assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none(), "unbounded selection defaults use the CPU oracle");
         doc.selection = None;
         gpu.health().mark(photocraft_gpu::Fault::Lost("synthetic loss".into()));
         assert!(crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, [1.0; 4]).is_none());
