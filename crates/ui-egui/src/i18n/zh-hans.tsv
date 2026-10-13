@@ -2747,3 +2747,7 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
+
+# View › Guides › right-click a guide
+	Edit Selected Guides	编辑所选参考线
+	Clear Selected Guides	清除所选参考线

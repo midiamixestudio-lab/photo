@@ -3135,3 +3135,7 @@ curves	Smooth	Glätten
 @plural	{n} action|{n} actions	{n} Aktion|{n} Aktionen
 	Auto Add/Delete	Autom. hinzuf./löschen
 	ICO is limited to 256 × 256 pixels	ICO ist auf 256 × 256 Pixel begrenzt
+
+# View › Guides › right-click a guide
+	Edit Selected Guides	Ausgewählte Hilfslinien bearbeiten
+	Clear Selected Guides	Ausgewählte Hilfslinien löschen

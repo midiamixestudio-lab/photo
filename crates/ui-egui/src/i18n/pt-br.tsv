@@ -3927,3 +3927,7 @@ layerLabel	No Color	Sem cor
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
+
+# View › Guides › right-click a guide
+	Edit Selected Guides	Editar guias selecionadas
+	Clear Selected Guides	Limpar guias selecionadas

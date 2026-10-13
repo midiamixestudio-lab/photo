@@ -395,7 +395,7 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 return err("context action is unavailable");
             }
             // A pasteboard row changes a preference: the policy sees the `prefs.set` it runs.
-            let (command, params) = crate::canvas_tool_menu::engine_call(menu, id);
+            let (command, params) = crate::canvas_tool_menu::engine_call(app, menu, id);
             if let Some(authorize) = app.services.automation_command.as_ref()
                 && let Err(error) = authorize(&command, &params)
             {
@@ -1293,6 +1293,7 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
                 "pos": menu.pos,
                 "tool": menu.tool,
                 "pasteboard": menu.pasteboard,
+                "guide": menu.guide,
                 "entries": context_entries(app, menu)
             })
         }),
