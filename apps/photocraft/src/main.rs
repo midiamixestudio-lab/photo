@@ -77,7 +77,7 @@ fn custom_titlebar(prefs_file: Option<&std::path::Path>) -> bool {
 /// `centered`, Windows cascades each new window from the top-left corner, so it opened at a
 /// different offset every launch (#419). Wayland compositors place windows themselves.
 fn native_options(custom_titlebar: bool) -> eframe::NativeOptions {
-    eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_icon(app_icon::window_icon())
             .with_app_id(APP_ID)
@@ -95,7 +95,14 @@ fn native_options(custom_titlebar: bool) -> eframe::NativeOptions {
         persistence_path: services::config_dir().map(|dir| dir.join("ui.ron")),
         window_builder: Some(Box::new(restored_window)),
         ..Default::default()
+    };
+    if cfg!(target_os = "windows") {
+        // An idle, focused vsynced window can make the desktop cursor stutter on Windows
+        // drivers with adaptive presentation. Avoid that path without forcing idle repaints.
+        // AutoNoVsync falls back to a supported mode; requiring Immediate could fail startup.
+        options.wgpu_options.surface.present_mode = eframe::wgpu::PresentMode::AutoNoVsync;
     }
+    options
 }
 
 /// The window eframe restores from `ui.ron`, corrected before it is created: at least the
@@ -572,6 +579,17 @@ fn main() -> eframe::Result {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn window_presentation_policy_is_independent_of_title_bar() {
+        let default_surface = eframe::NativeOptions::default().wgpu_options.surface;
+        for custom_titlebar in [false, true] {
+            let surface = super::native_options(custom_titlebar).wgpu_options.surface;
+            let expected = if cfg!(target_os = "windows") { eframe::wgpu::PresentMode::AutoNoVsync } else { default_surface.present_mode };
+            assert_eq!(surface.present_mode, expected);
+            assert_eq!(surface.desired_maximum_frame_latency, default_surface.desired_maximum_frame_latency);
+        }
+    }
+
     #[test]
     fn window_and_panel_geometry_survive_a_restart() {
         let options = super::native_options(super::CUSTOM_TITLEBAR);
