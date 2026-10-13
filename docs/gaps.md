@@ -1,6 +1,6 @@
 # Where PhotoCraft falls short of Photoshop
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (G7: Field Blur's on-canvas pins, #3373; G4: Hue Jitter amount track, #3825 partial; G4: minimum field interaction, #3825 partial; G1: CMYK Invert, Posterize and Threshold on the inks, 16-bit Lab Invert; Photoshop-oracle floor 145/258; G11: `.atn` import maps 112 events: Select and Mask, Filter Gallery Spatter, Ripple, Crystallize, Pattern Fill layers, mask targeting, Step Backward, nudges in points, Bitmap mode; G5: Free Transform H/V skew fields; G9: toolbar tool shortcut editing; refreshed against main: G2, G5, G7, G9, G10, G13, G14, G17 items that landed; G10: DPX read and write, #1049; G4: checkbox-only Brush Settings rows; G11: Load/Save Actions `.atn` landed, AUTO-219-2 partial; G5: hold-a-key spring-loaded tools landed, #2672; G1: #2465 fixed) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (G11: `.atn` import maps 116 events, CopyCat plays, patterns persist, Shift Edge scale; G7: Field Blur's on-canvas pins, #3373; G4: Hue Jitter amount track, #3825 partial; G4: minimum field interaction, #3825 partial; G1: CMYK Invert, Posterize and Threshold on the inks, 16-bit Lab Invert; Photoshop-oracle floor 145/258; G11: `.atn` import maps 112 events: Select and Mask, Filter Gallery Spatter, Ripple, Crystallize, Pattern Fill layers, mask targeting, Step Backward, nudges in points, Bitmap mode; G5: Free Transform H/V skew fields; G9: toolbar tool shortcut editing; refreshed against main: G2, G5, G7, G9, G10, G13, G14, G17 items that landed; G10: DPX read and write, #1049; G4: checkbox-only Brush Settings rows; G11: Load/Save Actions `.atn` landed, AUTO-219-2 partial; G5: hold-a-key spring-loaded tools landed, #2672; G1: #2465 fixed) · **Target:** Adobe Photoshop 2026
 
 Every known shortfall against Photoshop 2026 (27.11.0), one entry each, ranked by user impact
 on the way to beta. This is the work list agents pick from: take the highest-ranked entry that
@@ -99,7 +99,7 @@ what an agent can't finish alone.
   Duplicate Layers into a new document, Bitmap halftone screens…) load as kept Photoshop steps
   that fail at playback by name.
 - **Done 2026-10-12:** Load/Save Actions `.atn` in the panel menu, `batch --actions set.atn`
-  and `actions.load`/`actions.save`; 112 Photoshop events map to commands both ways (Transform,
+  and `actions.load`/`actions.save`; 116 Photoshop events map to commands both ways (Transform,
   Apply Image, Save for Web, smart-object edits, Gradient Map, Quick Mask, polygon selections,
   Place, Open, Image Size in percent, the Paint Bucket and Insert Conditional since the third
   and fourth PRs; Select and Mask, Filter Gallery Spatter, Ripple, Crystallize, Pattern Fill
@@ -112,7 +112,22 @@ what an agent can't finish alone.
   now smooths the spray's displacement, so high values tear an edge without detaching specks, as
   Photoshop's does (calibrated by eye on the Distress Press guide's screenshots). Crystallize
   fills each cell with the colour at its point instead of the cell's average, so a black-and-white
-  mask keeps hard edges (not yet checked against a Photoshop render). The panel groups actions
+  mask keeps hard edges (not yet checked against a Photoshop render). Select and Mask's Shift Edge
+  moves an edge by its soft width (radius, feather or smooth; 1 px for a hard edge) instead of a
+  fixed 4 px, so Debaser's two −100% chokes leave a thin rim, not a solid black band around the
+  ink (2026-10-13; scale not yet measured in Photoshop). Since 2026-10-13 also Create Clipping
+  Mask, Apply Locking and lock/Advanced Blending `set`s, Diffuse, New Snapshot (replace
+  existing), Clear History (`history.clear`), deleting a fill layer's or smart object's filter
+  mask (`ifPresent`: Photoshop adds that mask by default, PhotoCraft doesn't), smart filter
+  Blending Options, Shift-click layer ranges and Select and Mask's newer "output to selection";
+  Save in an Edit Contents document saves into its smart object during playback, and Bring to
+  Front of the front layer is a no-op. CopyCat (244 steps) plays end to end with its `.pat`;
+  AJ_Actions2023 keeps Lens Correction (a recorded lens profile) and the Timeline frame steps
+  unmapped; Line and Color plays except for calls to actions from other sets. Imported and
+  defined patterns persist in the preset store (`patterns.json` plus one `.pat` per pattern);
+  patterns over 128 px open as a preview and are read at full size when used, so gigabyte
+  texture libraries cost nothing at start.
+  The panel groups actions
   in set folders, has the dialog toggle column (playback pauses on the step's dialog and resumes
   on OK) and Insert Stop…; `actions.insert`, `actions.dialog`, `actions.assignSet` for agents
   (AUTO-219-2 done).
@@ -263,6 +278,7 @@ what an agent can't finish alone.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | G11: `.atn` import maps 116 events; CopyCat, AJ_Actions2023 and Line and Color sets import (CopyCat plays end to end); patterns persist across restarts; Shift Edge scale |
 | 2026-10-13 | minor | G4: Hue Jitter amount-track appearance (#3825, partial); no readiness percentage or estimate changed |
 | 2026-10-13 | minor | G4: minimum inputs in Shape Dynamics and Transfer follow their Control (#3825, partial); no readiness percentage or estimate changed |
 | 2026-10-12 | minor | G5: Free Transform options bar H/V skew fields done |
