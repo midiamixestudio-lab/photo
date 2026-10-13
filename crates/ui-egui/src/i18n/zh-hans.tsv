@@ -2738,3 +2738,4 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
+	Open color-less EXR as ACEScg	将无色彩空间信息的 EXR 以 ACEScg 打开

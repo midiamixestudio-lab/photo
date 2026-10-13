@@ -3827,3 +3827,4 @@ curves	Smooth	Εξομάλυνση
 @plural	{n} action|{n} actions	{n} ενέργεια|{n} ενέργειες
 	Auto Add/Delete	Αυτόματη προσθήκη/διαγραφή
 	ICO is limited to 256 × 256 pixels	Το ICO περιορίζεται σε 256 × 256 εικονοστοιχεία
+	Open color-less EXR as ACEScg	Άνοιγμα EXR χωρίς χρωματική δήλωση ως ACEScg
