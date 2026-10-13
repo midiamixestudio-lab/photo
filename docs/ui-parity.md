@@ -1,6 +1,6 @@
 # UI parity: tools, handles, modifiers and feel
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows; History snapshots) · **Target:** Adobe Photoshop 2026
 
 How PhotoCraft's direct manipulation compares with Photoshop 2026 (27.11.0): the toolbox, the
 handles and modifier keys of each gesture, nudging, snapping, numeric precision, navigation,
@@ -206,7 +206,7 @@ Paragraph; the rest open as in-app floating windows.
 | Command palette with recents | done | UI-217-7 |
 | Every preference takes effect | partial | 46 of 149 do nothing (scorecard) |
 | UI scale presets | missing | UI-217-9, #2492 |
-| History snapshots: camera button, snapshot rows (click returns, rename, delete), `history.*Snapshot` commands | partial | `history_cmds.rs`, `snapshot_rows` in `panels.rs`; New Snapshot dialog, first snapshot and History Options to come (#2966) |
+| History snapshots: camera button, New Snapshot dialog (⌥-click: Name, From), the first snapshot (the document as opened), snapshot rows (click returns, rename, delete), `history.*Snapshot` commands | partial | `history_cmds.rs`, `snapshot_rows` in `panels.rs`, `snapshot_dialog.rs`; the snapshot History Options and History Brush sources to come (#2966) |
 | Themes: Photoshop's four greys | partial | five themes; #2661 |
 | Document tabs: overflow, context menu, reorder | done | UI-217-6; middle-click close #2570 |
 | Layers panel: wheel steps blend modes, drop on New/Trash | partial | UI-217-14 |
@@ -232,3 +232,4 @@ Paragraph; the rest open as in-app floating windows.
 | 2026-10-12 | minor | Smart filter rows can be selected, and dragged (⌥: copied) onto another smart object or onto Delete (#4271) |
 | 2026-10-12 | minor | Free Transform options bar: H and V skew fields; a sheared box reads as skew instead of a taller H |
 | 2026-10-13 | minor | Smart filter rows can be dragged up or down their stack to reorder the filters |
+| 2026-10-12 | minor | History snapshots: the New Snapshot dialog (⌥-click the camera), and the first snapshot of the document as opened as the panel's top row (#2966) |
