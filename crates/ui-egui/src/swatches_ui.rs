@@ -71,8 +71,8 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let card_border = crate::theme::Tokens::get(ui.ctx()).card_border;
     let events = browser(ui, &mut st, PANEL, &groups, Place { canvas, max_h, new_tip: tl!("Create new swatch") }, &mut |ui, r: Rect, gi, ii| {
         let c = table.get(gi).and_then(|g| g.get(ii)).copied().unwrap_or(Color32::GRAY);
-        ui.painter().rect_filled(r, CornerRadius::same(2), c);
-        ui.painter().rect_stroke(r, CornerRadius::same(2), egui::Stroke::new(1.0, card_border), egui::StrokeKind::Inside);
+        ui.painter().rect_filled(r, CornerRadius::ZERO, c);
+        ui.painter().rect_stroke(r, CornerRadius::ZERO, egui::Stroke::new(1.0, card_border), egui::StrokeKind::Inside);
     });
     app.ui.presets_ui = st;
     let mods = ui.input(|i| i.modifiers);
@@ -300,9 +300,10 @@ mod tests {
         h.run_steps(3);
     }
 
-    /// The first swatch: below the first group header (22 px), after the 8 px grid inset.
+    /// Use the live tile bounds so interaction tests follow the panel's layout.
     fn first_cell(h: &Harness<'_, PhotocraftApp>) -> egui::Pos2 {
-        h.ctx.input(|i| i.viewport_rect()).min + vec2(8.0 + 12.0 + 8.0, 22.0 + 2.0 + 12.0 + 8.0)
+        use egui_kittest::kittest::Queryable;
+        h.get_by_label(&h.state().session.presets.swatches[0].items[0].name).rect().center()
     }
 
     /// Clicking a swatch while characters are selected recolours them, not just the foreground.
@@ -337,6 +338,34 @@ mod tests {
         assert_eq!(runs[0].len, 5, "the selection is its own run");
         assert_eq!(runs[0].style.color.to_rgba8(), [230, 40, 40, 255]);
         assert_eq!(runs[1].style.color.to_rgba8(), [255, 255, 255, 255]);
+    }
+
+    /// #5103: swatch tiles share edges horizontally and vertically, without a blank inset.
+    #[test]
+    fn swatch_grid_tiles_share_edges() {
+        use egui_kittest::kittest::Queryable;
+        for theme in crate::theme::ThemeKind::ALL {
+            for width in [180.0, 320.0] {
+                for size in [22.0, 40.0] {
+                    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+                    app.run("swatches.newGroup", json!({"name": "Spacing"})).unwrap();
+                    for i in 0..32 {
+                        app.run("swatches.add", json!({"group": "Spacing", "name": format!("Tile {i}"), "color": "#336699"})).unwrap();
+                    }
+                    app.ui.presets_ui.group_order.insert(PANEL.into(), vec!["Spacing".into()]);
+                    app.ui.presets_ui.sizes.insert(PANEL.into(), size);
+                    let mut h = Harness::builder().with_size(vec2(width, 300.0)).build_ui_state(|ui, app| panel(app, ui), app);
+                    PhotocraftApp::setup_context(&h.ctx, theme);
+                    h.run_steps(4);
+                    let first = h.get_by_label("Tile 0").rect();
+                    let second = h.get_by_label("Tile 1").rect();
+                    assert!((second.left() - first.right()).abs() < 0.1, "horizontal gap: {first:?}, {second:?}");
+                    let next_row = (1..32).map(|i| h.get_by_label(&format!("Tile {i}")).rect()).find(|r| r.top() > first.top() + 0.1).unwrap();
+                    assert!((next_row.top() - first.bottom()).abs() < 0.1, "vertical gap: {first:?}, {next_row:?}");
+                    assert!((first.left() - h.get_by_role(egui::accesskit::Role::Slider).rect().left()).abs() < 0.1, "no extra grid inset");
+                }
+            }
+        }
     }
 
     /// #4790: the footer (size slider, New Group, New, Delete) stays inside the panel however short

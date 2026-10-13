@@ -353,6 +353,8 @@ pub(crate) fn browser(
     let mut ev = Vec::new();
     let size = *st.sizes.get(panel).unwrap_or(&40.0);
     let list = size <= MIN_THUMB + 0.5;
+    // Swatches form an edge-to-edge colour grid; other preset thumbnails need gutters (#5103).
+    let swatches = panel == crate::swatches_ui::PANEL;
     let selected = st.selected.get(panel).cloned();
     // Rename field (Photoshop opens a small dialog; inline keeps the panel modeless).
     if let Some((p, key, mut text)) = st.renaming.clone().filter(|r| r.0 == panel) {
@@ -439,15 +441,15 @@ pub(crate) fn browser(
                     continue;
                 }
                 let w = ui.available_width();
+                let pad = if list || swatches { 0.0 } else { 8.0 };
+                let gap = if list || swatches { 0.0 } else { 4.0 };
                 let (cell, cols) = if list {
                     (vec2(w, 24.0), 1)
                 } else {
-                    let cols = ((w - 8.0 + 4.0) / (size + 4.0)).floor().max(1.0) as usize;
+                    let cols = ((w - pad + gap) / (size + gap)).floor().max(1.0) as usize;
                     (vec2(size, size), cols)
                 };
                 let rows = g.items.len().div_ceil(cols);
-                let pad = if list { 0.0 } else { 8.0 };
-                let gap = if list { 0.0 } else { 4.0 };
                 let (area, _) = ui.allocate_exact_size(vec2(w, rows as f32 * (cell.y + gap) + 2.0), Sense::hover());
                 for (ii, it) in g.items.iter().enumerate() {
                     let (cx, cy) = ((ii % cols) as f32, (ii / cols) as f32);
@@ -473,7 +475,9 @@ pub(crate) fn browser(
                         } else {
                             (Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside)
                         };
-                        ui.painter().rect_stroke(r, CornerRadius::same(2), stroke, kind);
+                        // Keep highlights inside dense tiles so they do not cover a neighbour.
+                        let (radius, kind) = if swatches { (CornerRadius::ZERO, egui::StrokeKind::Inside) } else { (CornerRadius::same(2), kind) };
+                        ui.painter().rect_stroke(r, radius, stroke, kind);
                     }
                     let resp = if list { resp } else { resp.on_hover_text(&it.name) };
                     if resp.double_clicked() {
