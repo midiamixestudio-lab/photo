@@ -28,13 +28,7 @@ impl Preview {
     pub(crate) fn new(doc: &Document, layer: Option<LayerId>, background: [f32; 4], reduced: bool) -> Self {
         // Effects and vector masks need document-space geometry, so retain full resolution there.
         let factor = if photocraft_compose::proxy::proxy_faithful(doc) { crate::proxy::preview_factor(doc, reduced) } else { 1 };
-        let mut base = crate::proxy::proxy_document(doc, factor);
-        if factor > 1
-            && let Some(mask) = base.quick_mask.as_mut()
-        {
-            mask.surface = crate::proxy::downsample(&mask.surface, factor);
-        }
-        let base = Arc::new(base);
+        let base = Arc::new(crate::proxy::proxy_document(doc, factor));
         Self { shown: base.clone(), base, layer, background, factor, geometry: Value::Null, view: None, texture: None, gpu: None, gpu_attempted: false }
     }
 
@@ -624,6 +618,91 @@ mod tests {
         let committed = crate::proxy::downsample(a.session.active().unwrap().doc.layers[0].surface().unwrap(), 2);
         for (x, y) in [(10, 10), (51, 70), (80, 70), (104, 70)] {
             assert_eq!(shown.pixel(x, y), committed.pixel(x, y), "proxy and full-resolution commit at ({x},{y})");
+        }
+    }
+
+    #[test]
+    fn quick_mask_preview_scales_once_with_the_document() {
+        for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            for (size, reduced, factor) in [(Size::new(3000, 2000), false, 1), (Size::new(3000, 2000), true, 2), (Size::new(6000, 4000), true, 4)] {
+                let mut doc = Document::new("Quick Mask proxy", size, ColorMode::Rgb, depth);
+                let mut mask = photocraft_raster::Surface::new(photocraft_color::PixelFormat::new(ColorMode::Grayscale, depth, false));
+                mask.fill_rect(Rect::new(400, 400, 800, 800), &[1.0]);
+                mask.fill_rect(Rect::new(480, 480, 720, 720), &[0.5]);
+                doc.quick_mask = Some(photocraft_doc::AlphaChannel::new("Quick Mask", mask));
+                let original = doc.quick_mask.clone();
+                let preview = Preview::new(&doc, None, [1.0; 4], reduced);
+                assert_eq!(preview.factor, factor);
+                assert_eq!(preview.base.size, Size::new(size.width / factor, size.height / factor));
+                let mask = &preview.base.quick_mask.as_ref().unwrap().surface;
+                assert_eq!(mask.format().sample, depth);
+                let k = factor as i32;
+                assert_eq!(mask.content_bounds(), Rect::new(400 / k, 400 / k, 800 / k, 800 / k));
+                assert_eq!(
+                    mask.to_interleaved(mask.content_bounds()),
+                    crate::proxy::downsample(&original.as_ref().unwrap().surface, factor).to_interleaved(mask.content_bounds())
+                );
+                assert_eq!(doc.quick_mask, original, "capturing a proxy must not change the source");
+            }
+        }
+    }
+
+    #[test]
+    fn reduced_quick_mask_affine_and_warp_previews_match_commit_and_leave_cancel_unchanged() {
+        for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            for (size, factor) in [(Size::new(3000, 2000), 2), (Size::new(6000, 4000), 4)] {
+                for warp in [false, true] {
+                    for commit in [false, true] {
+                        let mut doc = Document::new("Reduced Quick Mask transform", size, ColorMode::Rgb, depth);
+                        doc.layers.push(photocraft_doc::Layer::raster("pixels", doc.pixel_format()));
+                        let mut mask = photocraft_raster::Surface::new(photocraft_color::PixelFormat::new(ColorMode::Grayscale, depth, false));
+                        mask.fill_rect(Rect::new(400, 400, 800, 800), &[1.0]);
+                        mask.fill_rect(Rect::new(480, 480, 720, 720), &[0.5]);
+                        doc.quick_mask = Some(photocraft_doc::AlphaChannel::new("Quick Mask", mask));
+                        let mut session = Session::new();
+                        session.add_document(doc, None);
+                        let mut a = PhotocraftApp::new(session, crate::Services::default());
+                        let before = a.session.active().unwrap().doc.clone();
+                        let eyes = a.session.active().unwrap().channel_view.clone();
+                        crate::transform_tool::begin(&mut a, &egui::Context::default()).unwrap();
+                        assert_eq!(a.session.active().unwrap().channel_view, eyes);
+                        let t = a.ui.transform.as_mut().unwrap();
+                        assert_eq!(t.target, Some(json!("quickMask")));
+                        t.quad = t.quad.map(|[x, y]| [x + 40.0, y + 24.0]);
+                        if warp {
+                            t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0] + 40.0, p[1] + 24.0]), t.rect));
+                        }
+                        let t = a.ui.transform.clone().unwrap();
+                        let pv = a.transform_preview.as_mut().unwrap().channel.as_mut().unwrap();
+                        assert_eq!(pv.factor, factor);
+                        pv.update(&t).unwrap();
+                        let shown = pv.shown.quick_mask.as_ref().unwrap().surface.clone();
+                        let k = factor as i32;
+                        assert_eq!(shown.content_bounds(), Rect::new(440 / k, 424 / k, 840 / k, 824 / k));
+                        assert!(Arc::ptr_eq(&before, &a.session.active().unwrap().doc), "preview must not edit document pixels");
+                        if commit {
+                            crate::transform_tool::commit(&mut a);
+                            assert!(!a.ui.status_error, "{}", a.ui.status);
+                            let after = a.session.active().unwrap().doc.clone();
+                            let full = &after.quick_mask.as_ref().unwrap().surface;
+                            assert_eq!(full.content_bounds(), Rect::new(440, 424, 840, 824));
+                            let committed = crate::proxy::downsample(full, factor);
+                            let area = Rect::new(0, 0, 900 / k, 900 / k);
+                            assert_eq!(shown.to_interleaved(area), committed.to_interleaved(area), "{depth:?}, factor {factor}, warp {warp}");
+                            assert_eq!(after.layers, before.layers);
+                            a.run("edit.undo", json!({})).unwrap();
+                            assert_eq!(a.session.active().unwrap().doc.quick_mask, before.quick_mask);
+                            a.run("edit.redo", json!({})).unwrap();
+                            assert_eq!(a.session.active().unwrap().doc.quick_mask.as_ref().unwrap().surface, *full);
+                        } else {
+                            crate::transform_tool::cancel(&mut a);
+                            assert!(Arc::ptr_eq(&before, &a.session.active().unwrap().doc));
+                        }
+                        assert_eq!(a.session.active().unwrap().channel_view, eyes);
+                        assert!(!photocraft_engine::channel_transform::locked(&a.session));
+                    }
+                }
+            }
         }
     }
 
