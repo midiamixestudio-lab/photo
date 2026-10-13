@@ -31,11 +31,21 @@ pub struct TySh {
 }
 
 /// Parses a `TySh` block.
+/// Return whether a TySh affine can safely be passed into text layout and UI geometry.
+pub fn usable_tysh_transform(matrix: &[f64; 6]) -> bool {
+    matrix.iter().all(|v| v.is_finite() && v.abs() <= 1.0e9)
+}
+
 pub fn parse_tysh(data: &[u8]) -> Option<TySh> {
     let f = |at: usize| data.get(at..at + 8).map(|b| f64::from_be_bytes(b.try_into().unwrap_or([0; 8])));
     let mut m = [0.0; 6];
     for (i, v) in m.iter_mut().enumerate() {
         *v = f(2 + i * 8)?;
+    }
+    // A plausible type matrix must not create enormous or nonfinite geometry.
+    // The original byte layout is still retained for lossless PSD round-trips.
+    if !usable_tysh_transform(&m) {
+        return None;
     }
     let (text, used) = VersionedDescriptor::parse_prefix(data.get(52..)?).ok()?;
     let rest = data.get(52 + used..).unwrap_or(&[]);
@@ -1333,4 +1343,21 @@ pub fn build_tysh(layer: &TextLayer, dpi: f32, ink: Option<[f32; 4]>) -> Vec<u8>
     let warped = warp.as_ref().is_some_and(|w| enum_value(w, "warpStyle").is_some_and(|s| s != "warpNone"));
     let bounds = if warped { [l, t, r, b] } else { [0.0; 4] };
     write_tysh(&TySh { transform: layer.transform, text, warp, bounds })
+}
+
+#[cfg(test)]
+mod tysh_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn reject_unusable_matrices_before_type_layout() {
+        let original = TySh { transform: Affine { m: [1.0, 0.0, 0.0, 1.0, 30.0, 40.0] }, text: Descriptor::new("TxLr"), warp: None, bounds: [0.0; 4] };
+        let clean = write_tysh(&original);
+        assert_eq!(parse_tysh(&clean).unwrap().transform, original.transform);
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1.315776645269349e62] {
+            let mut bytes = clean.clone();
+            bytes[2..10].copy_from_slice(&bad.to_be_bytes());
+            assert!(parse_tysh(&bytes).is_none(), "invalid matrix must not be rendered: {bad}");
+        }
+    }
 }

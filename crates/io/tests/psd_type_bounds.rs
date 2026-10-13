@@ -367,7 +367,13 @@ fn hostile_type_sizes_without_pixels_import_without_a_huge_render() {
     {
         let runs = vec![Run { len: 1, size, leading: None }];
         let data = tysh("M", &runs, None, transform, [10.0, 10.0, 20.0, 20.0]);
-        let mut t = photocraft_text::psd::text_layer_from_tysh(&data, 72.0).unwrap();
+        // Extremely large TySh transforms are now rejected before any layout or rendering.
+        // Keep testing the import-time render cap for matrices within the safety gate.
+        if !photocraft_text::psd::usable_tysh_transform(&transform.m) {
+            assert!(photocraft_text::psd::text_layer_from_tysh(&data, 72.0).is_none(), "unsafe transform must be rejected before layout");
+            continue;
+        }
+        let mut t = photocraft_text::psd::text_layer_from_tysh(&data, 72.0).expect("valid TySh transform");
         if big {
             // Precondition: the renderer's own guard (256 Mpx) would have drawn this one.
             let mut engine = photocraft_text::TextEngine::new();
