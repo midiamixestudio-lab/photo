@@ -61,7 +61,7 @@ fn app() -> PhotocraftApp {
 fn parses_rows_shortcuts_entities_and_tool_keys() {
     let set = parse(SAMPLE).unwrap();
     assert_eq!(set.commands.len(), 11);
-    assert_eq!(set.commands[2], KysCommand { name: "Undo".into(), shortcuts: vec!["Cmd+Z".into(), "F1".into()] });
+    assert_eq!(set.commands[2], KysCommand { name: "Undo".into(), shortcuts: vec!["Cmd+Z".into(), "F1".into()], id: None });
     assert_eq!(set.commands[7].name, "Black & White...");
     assert_eq!(set.tool_keys, 1, "the empty Default Colors row carries no key");
 }
@@ -104,7 +104,8 @@ fn rows_match_our_commands_by_label_with_photoshop_tie_breaks() {
 #[test]
 fn an_unreadable_shortcut_is_reported_not_imported() {
     let app = app();
-    let set = super::KysSet { name: None, commands: vec![KysCommand { name: "Undo".into(), shortcuts: vec!["Cmd+Shift+Ctrl".into()] }], tool_keys: 0 };
+    let set =
+        super::KysSet { name: None, commands: vec![KysCommand { name: "Undo".into(), shortcuts: vec!["Cmd+Shift+Ctrl".into()], id: None }], tool_keys: 0 };
     let p = plan(&app, &set);
     assert!(p.set.is_empty());
     assert_eq!(p.unreadable, vec!["Undo".to_string()]);
@@ -178,6 +179,31 @@ fn an_opened_kys_file_opens_the_dialog_filled() {
     assert_eq!(d.fields["message"], json!("Imported 1 shortcuts from more.kys. Click OK to keep them."));
     let bad = crate::preset_files_ui::open(&mut app, "notes.kys", b"hello").unwrap().unwrap_err();
     assert!(bad.contains("not a keyboard shortcut set (.kys)"), "{bad}");
+}
+
+/// #3665: a row listing Copy's ⌘C and F3 keeps both; the old import kept the first key only,
+/// and a row of F3 alone left ⌘C unbound only because the set says so.
+#[test]
+fn an_imported_row_keeps_its_second_key() {
+    let mut app = app();
+    let set = "<photoshop-keyboard-shortcuts>\
+        <command name=\"Copy\"><shortcut>F3</shortcut><shortcut>Cmd+C</shortcut></command>\
+        <command name=\"Cut\"><shortcut>Cmd+X</shortcut></command>\
+        <command name=\"Undo\"><shortcut>Cmd+Z</shortcut><shortcut>F1</shortcut></command>\
+        </photoshop-keyboard-shortcuts>";
+    let r = super::import_text(&mut app, "ps.kys", set).unwrap();
+    assert_eq!(r["alternateKeys"]["edit.copy"], json!(["F3"]));
+    let id = r["dialog"].as_u64().unwrap();
+    let f = &app.ui.dialog_mut(id).unwrap().fields;
+    assert!(f["overrides"].get("edit.copy").is_none(), "Copy keeps ⌘C: {}", f["overrides"]);
+    assert!(f["alternates"].get("edit.copy").is_none(), "F3 is Copy's default alternate");
+    assert_eq!(f["alternates"]["edit.cut"], json!([]), "the set gives Cut no F2");
+    assert_eq!(f["alternates"]["edit.undo"], json!(["F1"]));
+    crate::dialogs::confirm(&mut app, id).unwrap();
+    assert_eq!(crate::shortcuts::effective_shortcut(&app, "edit.copy", Some("Cmd+C")).as_deref(), Some("Cmd+C"));
+    assert_eq!(crate::shortcuts::effective_alternates(&app, "edit.copy"), ["F3"]);
+    assert!(crate::shortcuts::effective_alternates(&app, "edit.cut").is_empty());
+    assert_eq!(crate::shortcuts::effective_alternates(&app, "edit.undo"), ["F1"]);
 }
 
 type Store = std::sync::Arc<std::sync::Mutex<Option<String>>>;

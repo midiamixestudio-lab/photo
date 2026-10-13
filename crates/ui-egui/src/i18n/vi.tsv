@@ -3587,6 +3587,7 @@ curves	Smooth	Làm mượt
 	Stroke Path…	Đi nét đường dẫn…
 	Apply mask to layer before removing?	Áp dụng mặt nạ vào lớp trước khi xóa?
 	Delete the vector mask?	Xóa mặt nạ vectơ?
+	Add Shortcut	Thêm phím tắt
 	Object Finder	Trình tìm đối tượng
 	No object found there — drag a rectangle around it	Không tìm thấy đối tượng ở đó — hãy kéo một hình chữ nhật quanh nó
 	Remove after each stroke	Xóa sau mỗi nét vẽ
@@ -3624,3 +3625,17 @@ curves	Smooth	Làm mượt
 	Choose a gradient file (.grd).	Chọn tệp chuyển sắc (.grd).
 	Auto Add/Delete	Tự động thêm/xóa
 	ICO is limited to 256 × 256 pixels	ICO giới hạn ở 256 × 256 pixel
+	Delete this set	Xóa bộ này
+	New Set…	Bộ mới…
+	PhotoCraft Defaults	Mặc định của PhotoCraft
+	Save a list of these shortcuts as a web page	Lưu danh sách các phím tắt này thành trang web
+	Save the changes to this set	Lưu thay đổi vào bộ này
+	Save these shortcuts as a .kys file	Lưu các phím tắt này thành tệp .kys
+	Save these shortcuts as a new set	Lưu các phím tắt này thành bộ mới
+	Set deleted.	Đã xóa bộ.
+	Set saved.	Đã lưu bộ.
+	Set:	Bộ:
+	Summarize…	Tóm tắt…
+	There are too many sets: delete one first.	Có quá nhiều bộ: hãy xóa một bộ trước.
+	set name	tên bộ
+	{set} (modified)	{set} (đã sửa đổi)
