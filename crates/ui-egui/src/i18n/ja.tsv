@@ -3815,3 +3815,7 @@ curves	Smooth	スムーズ
 	Reset All Locked Settings	ロックされた設定をすべて初期化
 	Copy Texture to Other Tools	テクスチャを他のツールにコピー
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
+	Playback Options	再生オプション
+	Accelerated	高速
+	Step by Step	ステップ単位
+	Pause For	一時停止
