@@ -456,7 +456,7 @@ fn adjustment_smart_filters_take_a_selection_as_their_mask() {
 }
 
 /// A wrong-typed value errors before anything is recorded (never a panic), and the adjustments
-/// that can't re-render from a source (Replace Color, Match Color) stay off a smart object.
+/// that can't re-render from a source (Match Color) stays off a smart object.
 #[test]
 fn a_bad_adjustment_param_on_a_smart_object_is_an_error() {
     let mut s = smart_session();
@@ -466,7 +466,6 @@ fn a_bad_adjustment_param_on_a_smart_object_is_an_error() {
     assert_eq!(smart_filters_of(&s).len(), filters, "nothing recorded");
     assert_eq!(s.active().unwrap().history.past_len(), steps, "no history step");
     assert_eq!(flatten(&s), flat, "pixels untouched");
-    assert!(!s.is_enabled("image.adjustments.replaceColor"), "only adjustments that re-render become smart filters");
     assert!(!s.is_enabled("image.adjustments.matchColor"), "only adjustments that re-render become smart filters");
 }
 
@@ -502,6 +501,30 @@ fn a_targeted_mask_enables_editing_it_on_any_layer() {
     assert!(!s.is_enabled_with("image.adjustments.invert", &mask));
     assert!(s.execute("image.adjustments.invert", mask).is_err());
     assert_eq!(rgba(&s, 23, 3), pixels);
+}
+
+/// Desaturate, Equalize and Replace Color on a smart object record a smart filter that renders
+/// what the destructive command bakes into the same pixels (they used to be refused).
+#[test]
+fn desaturate_equalize_and_replace_color_record_smart_filters() {
+    let replace = json!({"color": "#ff0000", "fuzziness": 120, "hue": 90});
+    for (id, params) in [("image.adjustments.desaturate", json!({})), ("image.adjustments.equalize", json!({})), ("image.adjustments.replaceColor", replace)] {
+        let mut plain = session(8, "rgb");
+        let original = flatten(&plain);
+        plain.execute(id, params.clone()).unwrap();
+        let baked = flatten(&plain);
+        assert!(max_diff(&original, &baked) > 0.02, "{id}: the control changes the pixels");
+
+        let mut s = smart_session();
+        assert!(s.is_enabled(id), "{id} runs on a smart object");
+        s.execute(id, params).unwrap();
+        let sf = smart_filters_of(&s);
+        assert_eq!(sf.len(), 1, "{id}");
+        assert_eq!(sf[0].command, id);
+        assert_eq!(max_diff(&flatten(&s), &baked), 0.0, "{id}: the smart filter renders the destructive result");
+        s.undo();
+        assert!(smart_filters_of(&s).is_empty(), "{id}: undo removes the filter");
+    }
 }
 
 #[test]
