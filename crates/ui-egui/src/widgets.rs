@@ -490,6 +490,15 @@ fn value_field_in(
     value_field_box(ui, value, range, suffix, vec2(width, VALUE_FIELD_H), trailing, opts)
 }
 
+/// How far below the top of a one-line `galley` its baseline and the vertical centre of its first
+/// glyph's ink sit, in points. `None` for an empty galley.
+fn baseline_and_ink_centre(galley: &egui::Galley) -> Option<(f32, f32)> {
+    let row = galley.rows.first()?;
+    let glyph = row.row.glyphs.first()?;
+    let baseline = row.pos.y + glyph.pos.y;
+    Some((baseline, baseline + glyph.uv_rect.offset.y + glyph.uv_rect.size.y / 2.0))
+}
+
 /// [`value_field_in`] with a box of any `size`.
 fn value_field_box(
     ui: &mut Ui,
@@ -517,14 +526,20 @@ fn value_field_box(
     }
     // The number's slot ends 1 pt left of the suffix, by its measured width (the suffix is drawn
     // 6 pt from the right edge), so a one-character unit like `%` leaves the number room (#3040).
-    let suffix_font = theme::mono(11.0);
-    let suffix_w = if suffix.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(suffix.to_owned(), suffix_font.clone(), t.text_faint).size().x + 3.0 };
-    // 1 pt higher than centred: digits have no descenders, so centred text looks low. The slot
+    let suffix_galley = (!suffix.is_empty()).then(|| ui.painter().layout_no_wrap(suffix.to_owned(), theme::mono(11.0), t.text_faint));
+    let suffix_w = suffix_galley.as_ref().map_or(0.0, |g| g.size().x + 3.0);
+    // The digits' ink is centred in the box, not their text row: the row's descender and line
+    // gap would leave the digits off-centre by a font-dependent amount (#1322, #5150). The slot
     // is at least one text row tall, so a slim box's number isn't pushed out of it (#2823).
     let font = theme::mono(12.0);
-    let row_h = ui.painter().layout_no_wrap("0".into(), font.clone(), t.text).size().y;
+    // Laid out as the DragValue lays out its number (centred in its row), so the baselines match.
+    let digits_job =
+        egui::WidgetText::from(egui::RichText::new("0").font(font.clone())).into_layout_job(ui.style(), egui::FontSelection::Default, egui::Align::Center);
+    let digits = ui.painter().layout_job(std::sync::Arc::unwrap_or_clone(digits_job));
+    let row_h = digits.size().y;
+    let (digits_baseline, digits_ink_centre) = baseline_and_ink_centre(&digits).unwrap_or((row_h / 2.0, row_h / 2.0));
     let slot_h = (rect.height() - 4.0).max(row_h).min(rect.height() - 2.0);
-    let cy = rect.center().y - 1.0;
+    let cy = rect.center().y + row_h / 2.0 - digits_ink_centre;
     let field = Rect::from_min_max(pos2(rect.left() + 4.0, cy - slot_h / 2.0), pos2(rect.right() - 4.0 - suffix_w - trailing, cy + slot_h / 2.0));
     // Small ranges (gamma 0.01–9.99, 0–1 centres) need two decimals and a finer drag, like Photoshop.
     let fine = range.end() - range.start() <= 10.0;
@@ -576,8 +591,12 @@ fn value_field_box(
         resp.flags.set(Flags::DRAGGED, resp.flags.contains(Flags::DRAGGED) || s.dragging);
         resp.flags.set(Flags::DRAG_STOPPED, resp.flags.contains(Flags::DRAG_STOPPED) || s.stopped);
     }
-    if !suffix.is_empty() {
-        ui.painter().text(pos2(rect.right() - 6.0 - trailing, rect.center().y), Align2::RIGHT_CENTER, suffix, suffix_font, t.text_faint);
+    if let Some(galley) = suffix_galley {
+        // On the number's baseline: the unit is smaller, so centring its own row drops it below the digits.
+        let baseline = cy - row_h / 2.0 + digits_baseline;
+        let suffix_baseline = baseline_and_ink_centre(&galley).map_or(galley.size().y / 2.0, |(b, _)| b);
+        let pos = pos2(rect.right() - 6.0 - trailing - galley.size().x, baseline - suffix_baseline);
+        ui.painter().galley(pos, galley, t.text_faint);
     }
     if step != 0.0 {
         // Round to the step before adding it, so whole-number fields drop decimals (55.4 + 1 = 56).
@@ -1842,24 +1861,69 @@ mod tests {
         h
     }
 
-    /// Digits have no descenders, so the number sits 1 pt above the box's centre to look centred.
+    /// Whether device pixel (`x`, `y`) differs from `background` by more than an eighth of the range.
+    fn inked(pixel: &impl Fn(u32, u32) -> [u8; 4], background: [u8; 4], x: u32, y: u32) -> bool {
+        pixel(x, y).iter().zip(background).take(3).any(|(&p, b)| p.abs_diff(b) > 32)
+    }
+
+    /// The rows of device pixels that hold ink between columns `x0..x1` and rows `y0..y1`.
+    fn ink_rows(pixel: &impl Fn(u32, u32) -> [u8; 4], background: [u8; 4], (x0, x1): (u32, u32), (y0, y1): (u32, u32)) -> Option<(u32, u32)> {
+        let row_inked = |y: u32| (x0..x1).any(|x| inked(pixel, background, x, y));
+        let top = (y0..y1).find(|&y| row_inked(y))?;
+        let bottom = (y0..y1).rev().find(|&y| row_inked(y))?;
+        Some((top, bottom + 1))
+    }
+
+    /// The first empty column left of the rightmost ink in columns `x0..x1`: where the unit starts.
+    fn unit_start(pixel: &impl Fn(u32, u32) -> [u8; 4], background: [u8; 4], (x0, x1): (u32, u32), (y0, y1): (u32, u32)) -> Option<u32> {
+        let column_inked = |x: u32| (y0..y1).any(|y| inked(pixel, background, x, y));
+        let unit_right = (x0..x1).rev().find(|&x| column_inked(x))?;
+        (x0..unit_right).rev().find(|&x| !column_inked(x)).map(|x| x + 1)
+    }
+
+    /// The rendered digits sit in the middle of the box, and on the same baseline as their unit,
+    /// at 100 %, 150 % and 200 % display scale, with and without a pop-up ▾ (#5150: they sat
+    /// 1.5 pt high, 2 px above the `%`).
     #[test]
-    fn value_field_digits_sit_one_point_above_centre() {
-        let mut h = Harness::new_ui_state(
-            |ui, s: &mut (f32, egui::Rect)| {
-                s.1 = super::value_field_in(ui, &mut s.0, 0.0..=100.0, "px", 80.0, 0.0, super::FieldOpts::default()).1;
-            },
-            (50.0, egui::Rect::NOTHING),
-        );
-        h.run();
-        let number = h.get_by_role(egui::accesskit::Role::SpinButton).rect();
-        let field = h.state().1;
-        assert!((field.center().y - number.center().y - 1.0).abs() < 0.01, "field {field:?}, number {number:?}");
+    fn value_field_digits_are_centred_and_level_with_their_unit() {
+        use crate::theme::ThemeKind;
+        for kind in [ThemeKind::ProMedium, ThemeKind::Pro, ThemeKind::Studio, ThemeKind::StudioLight] {
+            for (scale, trailing) in [1.0f32, 1.5, 2.0].into_iter().flat_map(|scale| [(scale, 0.0), (scale, super::POPUP_ARROW_W)]) {
+                let mut h = Harness::builder().with_size(egui::vec2(120.0, 40.0)).with_pixels_per_point(scale).wgpu().build_ui_state(
+                    move |ui, s: &mut (f32, egui::Rect)| {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            s.1 = super::value_field_in(ui, &mut s.0, 0.0..=100.0, "%", 70.0, trailing, super::FieldOpts::default()).1;
+                        });
+                    },
+                    (100.0, egui::Rect::NOTHING),
+                );
+                crate::PhotocraftApp::setup_context(&h.ctx, kind);
+                h.run_steps(4);
+                let field = h.state().1;
+                let image = h.render().unwrap();
+                let px = |points: f32| (points * scale).round() as u32;
+                let rows = (px(field.top() + 3.0), px(field.bottom() - 3.0));
+                let pixel = |x: u32, y: u32| image.get_pixel(x, y).0;
+                let (left, right) = (px(field.left() + 3.0), px(field.right() - trailing - 3.0));
+                let background = pixel(left, rows.0);
+                let what = format!("{kind:?} at {scale}x, ▾ {trailing}: field {field:?}");
+                let split = unit_start(&pixel, background, (left, right), rows).unwrap_or_else(|| panic!("{what}: no unit"));
+                let (digits_top, digits_bottom) = ink_rows(&pixel, background, (left, split), rows).unwrap_or_else(|| panic!("{what}: no digits"));
+                let (_, unit_bottom) = ink_rows(&pixel, background, (split, right), rows).unwrap_or_else(|| panic!("{what}: no unit"));
+                let what = format!("{what}, digits rows {digits_top}..{digits_bottom}, % bottom {unit_bottom}");
+                let digits_centre = (digits_top + digits_bottom) as f32 / 2.0 / scale;
+                assert!((digits_centre - field.center().y).abs() <= 0.5, "{what}: digits centre {digits_centre}");
+                assert!(digits_bottom.abs_diff(unit_bottom) <= 1, "{what}");
+            }
+        }
     }
 
     /// With the app's theme (its 24 pt interact height and 4 pt button padding), in a full-size
-    /// box and a slim status-bar box alike, the number stays inside the box, 1 pt above its centre,
-    /// and a long number doesn't spill out of the box's left edge (#2823).
+    /// box and a slim status-bar box alike, the number stays inside the box, at most 1 pt below its
+    /// centre (where its digits' ink is centred; the old 1 pt nudge put it above, #5150), and a long
+    /// number doesn't spill out of the box's left edge (#2823).
     #[test]
     fn themed_value_field_number_sits_inside_its_box_in_every_size() {
         for kind in crate::theme::ThemeKind::ALL {
@@ -1878,7 +1942,7 @@ mod tests {
                 let field = harness.state().1;
                 let what = format!("{kind:?} {w}x{h}: field {field:?}, number {number:?}");
                 assert!(field.contains_rect(number), "{what}");
-                assert!((field.center().y - number.center().y - 1.0).abs() < 0.51, "{what}");
+                assert!((-0.5..=1.0).contains(&(number.center().y - field.center().y)), "{what}");
             }
         }
     }
