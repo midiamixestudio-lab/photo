@@ -3103,3 +3103,7 @@ curves	Smooth	Сгладить
 	Gray Value (Median)	Уровень серого (медиана)
 	Integrated Density	Интегральная плотность
 	Length	Длина
+# Bevel & Emboss Technique.
+	Technique	Метод
+	Chisel Hard	Жесткая огранка
+	Chisel Soft	Мягкая огранка

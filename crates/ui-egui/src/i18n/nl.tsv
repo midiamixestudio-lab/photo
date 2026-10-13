@@ -3897,3 +3897,7 @@ curves	Smooth	Vloeiend maken
 @plural	{n} action|{n} actions	{n} handeling|{n} handelingen
 	Auto Add/Delete	Automatisch toevoegen/verwijderen
 	ICO is limited to 256 × 256 pixels	ICO is beperkt tot 256 × 256 pixels
+# Bevel & Emboss Technique.
+	Technique	Techniek
+	Chisel Hard	Beitel hard
+	Chisel Soft	Beitel zacht
