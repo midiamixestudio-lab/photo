@@ -69,11 +69,18 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     st.sizes.entry(PANEL.to_string()).or_insert(DEFAULT_SIZE);
     let max_h = (ui.available_height() - 30.0).max(60.0);
     let card_border = crate::theme::Tokens::get(ui.ctx()).card_border;
-    let events = browser(ui, &mut st, PANEL, &groups, Place { canvas, max_h, new_tip: tl!("Create new swatch") }, &mut |ui, r: Rect, gi, ii| {
-        let c = table.get(gi).and_then(|g| g.get(ii)).copied().unwrap_or(Color32::GRAY);
-        ui.painter().rect_filled(r, CornerRadius::same(2), c);
-        ui.painter().rect_stroke(r, CornerRadius::same(2), egui::Stroke::new(1.0, card_border), egui::StrokeKind::Inside);
-    });
+    let events = browser(
+        ui,
+        &mut st,
+        PANEL,
+        &groups,
+        Place { canvas, max_h, new_tip: tl!("Create new swatch"), pointer: app.stylus.feed.source() },
+        &mut |ui, r: Rect, gi, ii| {
+            let c = table.get(gi).and_then(|g| g.get(ii)).copied().unwrap_or(Color32::GRAY);
+            ui.painter().rect_filled(r, CornerRadius::same(2), c);
+            ui.painter().rect_stroke(r, CornerRadius::same(2), egui::Stroke::new(1.0, card_border), egui::StrokeKind::Inside);
+        },
+    );
     app.ui.presets_ui = st;
     let mods = ui.input(|i| i.modifiers);
     for e in events {
