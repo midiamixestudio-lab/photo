@@ -2344,7 +2344,7 @@
 	Drag or click polygon points · hold Alt during lasso for straight segments · {add} add · {sub} before drawing subtracts	Σύρετε ή κάντε κλικ για πολυγωνικά σημεία · κρατήστε Alt κατά το λάσο για ευθείες · {add} προσθήκη · {sub} αφαίρεση πριν από τη σχεδίαση
 	Drag to draw a gradient	Σύρετε για να σχεδιάσετε διαβάθμιση
 	Drag to move the active layer	Σύρετε για μετακίνηση του ενεργού επιπέδου
-	Drag to move the active shape's path or the Work Path	Σύρετε για μετακίνηση της διαδρομής του ενεργού σχήματος ή της διαδρομής εργασίας
+	Drag to move the selected path	Σύρετε για μετακίνηση της επιλεγμένης διαδρομής
 	Dual Brush	Διπλό πινέλο
 	Duplicate Path	Διπλασιασμός διαδρομής
 	Duplicate style	Διπλασιασμός στυλ

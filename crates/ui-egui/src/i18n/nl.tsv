@@ -1071,7 +1071,7 @@
 	Dots	Stippen
 	Drag a rectangle around the object	Sleep een rechthoek rond het object
 	Drag on the image to add a constraint; Shift for horizontal/vertical; right-click to delete.	Sleep over de afbeelding om een beperking toe te voegen; Shift voor horizontaal/verticaal; rechtsklik om te verwijderen.
-	Drag to move the active shape's path or the Work Path	Sleep om het pad van de actieve vorm of het werkpad te verplaatsen
+	Drag to move the selected path	Sleep om het geselecteerde pad te verplaatsen
 	Click: select anchor · Drag: move anchor, handle or segment · {shift}-click: add · {alt}-click: whole subpath	Klik: ankerpunt selecteren · Slepen: ankerpunt, greep of segment verplaatsen · {shift}-klik: toevoegen · {alt}-klik: heel subpad
 	Draw with the Pen tool (P) or make a work path from a selection.	Teken met het pengereedschap (P) of maak een werkpad van een selectie.
 	Drop an image or PSD anywhere to open it.	Sleep een afbeelding of PSD ergens naartoe om deze te openen.

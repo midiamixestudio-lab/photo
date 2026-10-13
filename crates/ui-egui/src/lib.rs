@@ -515,6 +515,9 @@ pub struct PhotocraftApp {
     monitors: monitor_status::State,
     checker: Option<egui::TextureHandle>,
     drag: Option<canvas::Drag>,
+    /// An owned vector drag was cancelled (`canvas::cancel_stale_vector_drag`): the rest of its
+    /// pointer events go nowhere.
+    pub(crate) cancelled_vector_drag: bool,
     /// A Move-tool press landed on a locked layer: the first pointer move shows Photoshop's
     /// message (`move_lock`), a plain click shows nothing.
     pub(crate) move_blocked: bool,
@@ -617,6 +620,9 @@ pub struct PhotocraftApp {
     pub(crate) drop_places: std::collections::VecDeque<egui::DroppedFileHandle>,
     /// The document each of `ui.views` belongs to, as of the last [`Self::sync_views`].
     view_docs: Vec<DocId>,
+    /// The document `ui.selected_path` belongs to, as of the last [`Self::sync_views`]: a Paths
+    /// panel selection never carries over to a same-named path in another tab.
+    path_document: Option<(DocId, u64, std::sync::Weak<Document>)>,
     pub fps: f32,
     last_frame_time: f64,
     thumbs: HashMap<(photocraft_doc::LayerId, u8), (u64, egui::TextureHandle)>,
@@ -774,6 +780,7 @@ impl PhotocraftApp {
             monitors: Default::default(),
             checker: None,
             drag: None,
+            cancelled_vector_drag: false,
             move_blocked: false,
             tool_override: None,
             live_stroke: None,
@@ -819,6 +826,7 @@ impl PhotocraftApp {
             tab_strip: None,
             drop_places: Default::default(),
             view_docs: Vec::new(),
+            path_document: None,
             fps: 0.0,
             last_frame_time: 0.0,
             thumbs: HashMap::new(),
@@ -1126,6 +1134,22 @@ impl PhotocraftApp {
     }
 
     pub fn sync_views(&mut self) {
+        // The Paths panel selection belongs to the active document. Ordinary edits replace the
+        // snapshot and advance its revision; a replaced snapshot without a newer revision is a
+        // reopened document, even with the same ID.
+        let document = self.session.active().map(|st| (st.doc.id, st.revision, std::sync::Arc::downgrade(&st.doc)));
+        let same_document = match (&self.path_document, &document) {
+            (Some((old_id, old_revision, old_source)), Some((id, revision, source))) => old_id == id && (revision > old_revision || old_source.ptr_eq(source)),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same_document {
+            self.ui.selected_path = None;
+        }
+        self.path_document = document;
+        vector_ui::cancel_stale_pen(self);
+        direct_select::cancel_stale(self);
+        canvas::cancel_stale_vector_drag(self);
         type_transform::cancel_stale(self);
         crate::cam_transform::cancel_stale(self);
         crate::lasso_ui::cancel_stale(self);
@@ -1703,9 +1727,10 @@ impl eframe::App for PhotocraftApp {
         if self.ui.text_edit.as_ref().is_some_and(|ed| !self.ui.tool.is_type() || ed.mask != self.ui.tool.is_type_mask()) {
             type_tool::commit(self);
         }
-        if self.ui.pen.as_ref().is_some_and(|p| !p.drawn_with(self.ui.tool)) {
-            vector_ui::pen_commit(self, false);
-        }
+        vector_ui::cancel_stale_pen(self);
+        direct_select::cancel_stale(self);
+        canvas::cancel_stale_vector_drag(self);
+        vector_ui::finish_pen_if_left(self);
         transform_tool::end_if_left(self);
         shape_stroke_ui::sync_editor(self, ctx);
         self.collect_screenshots(ctx);
@@ -2481,6 +2506,9 @@ mod input_tests;
 
 #[cfg(test)]
 mod pen_variants_tests;
+
+#[cfg(test)]
+mod pen_path_ownership_tests;
 
 #[cfg(test)]
 mod color_replacement_tests;

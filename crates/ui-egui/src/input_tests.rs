@@ -898,7 +898,9 @@ fn hand_pointer_over_the_canvas_under_a_dialog() {
 fn esc_ends_a_pen_path_and_keeps_it() {
     let mut h = harness();
     h.state_mut().ui.tool = crate::state::Tool::Pen;
-    h.state_mut().ui.pen = Some(crate::vector_ui::PenPath { knots: vec![[[50.0, 50.0]; 3], [[150.0, 50.0]; 3], [[150.0, 120.0]; 3]], ..Default::default() });
+    let owner = crate::vector_ui::capture_pen_owner(h.state());
+    h.state_mut().ui.pen =
+        Some(crate::vector_ui::PenPath { knots: vec![[[50.0, 50.0]; 3], [[150.0, 50.0]; 3], [[150.0, 120.0]; 3]], owner, ..Default::default() });
     h.key_press(Key::Escape);
     h.run_steps(2);
     assert!(h.state().ui.pen.is_none(), "the Pen leaves drawing state");
@@ -917,7 +919,8 @@ fn esc_ends_a_pen_path_and_keeps_it() {
 fn pen_shows_the_close_path_pointer_over_the_first_anchor() {
     let mut h = harness();
     h.state_mut().ui.tool = crate::state::Tool::Pen;
-    h.state_mut().ui.pen = Some(crate::vector_ui::PenPath { knots: vec![[[50.0, 50.0]; 3], [[150.0, 50.0]; 3]], ..Default::default() });
+    let owner = crate::vector_ui::capture_pen_owner(h.state());
+    h.state_mut().ui.pen = Some(crate::vector_ui::PenPath { knots: vec![[[50.0, 50.0]; 3], [[150.0, 50.0]; 3]], owner, ..Default::default() });
     let screen = |h: &Harness<'static, PhotocraftApp>, x: f32, y: f32| {
         let v = &h.state().ui.views[0];
         let c = h.state().last_canvas_rect.center();

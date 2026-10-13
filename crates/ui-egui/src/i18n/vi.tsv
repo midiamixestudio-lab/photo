@@ -910,6 +910,7 @@
 	Align horizontal centers	Căn tâm ngang
 	Align right edges	Căn cạnh phải
 	Drag to move the active shape's path or the Work Path	Kéo để di chuyển đường dẫn hình đang chọn hoặc Đường dẫn làm việc
+	Drag to move the selected path	Kéo để di chuyển đường dẫn đã chọn
 	Click: corner · Drag: smooth · Click first point: close · {key} finish · Esc cancel	Bấm: góc · Kéo: mượt · Bấm điểm đầu: đóng · {key} xong · Esc hủy
 	Click: select anchor · Drag: move anchor, handle or segment · {shift}-click: add · {alt}-click: whole subpath	Bấm: chọn điểm neo · Kéo: di chuyển điểm neo, tay nắm hoặc đoạn · {shift}-bấm: thêm · {alt}-bấm: cả nhánh con
 

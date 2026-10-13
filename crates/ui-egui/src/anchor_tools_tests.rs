@@ -133,7 +133,7 @@ fn shape_layer_paths_are_edited_and_a_direct_selection_is_cleared() {
     let mut app = app(Tool::DirectSelection);
     let id = app.run("shape.create", json!({"kind": "rect", "rect": [20, 20, 60, 60], "fill": "#3070c0"})).unwrap()["layer"].as_u64().unwrap();
     click(&mut app, [80.0, 80.0], Modifiers::NONE);
-    assert_eq!((app.ui.direct_selection.target, app.ui.direct_selection.anchors.clone()), (Some(PathRef::Layer(id)), vec![[0, 2]]));
+    assert_eq!((app.ui.direct_selection.target.clone(), app.ui.direct_selection.anchors.clone()), (Some(PathRef::Layer(id)), vec![[0, 2]]));
     app.ui.tool = Tool::AddAnchorPoint;
     click(&mut app, [50.0, 20.0], Modifiers::NONE);
     let info = app.run("shape.info", json!({"layer": id})).unwrap();
@@ -229,4 +229,30 @@ fn the_pen_cursor_shows_what_auto_add_delete_would_do() {
     assert_eq!(badge(&app, Tool::Pen, Modifiers::SHIFT), None);
     app.ui.tool_options.pen_auto_add_delete = false;
     assert_eq!(badge(&app, Tool::Pen, Modifiers::NONE), None);
+}
+
+#[test]
+fn add_and_delete_anchor_tools_edit_the_selected_saved_path() {
+    let mut app = app(Tool::AddAnchorPoint);
+    with_path(&mut app);
+    let before_work = work(&app);
+    let path = photocraft_engine::vector_cmds::path_json(&before_work);
+    app.run("path.set", json!({"name":"Saved", "path":path})).unwrap();
+    app.ui.selected_path = Some("Saved".into());
+    let n = steps(&app);
+    click(&mut app, [80.0, 120.0], Modifiers::NONE);
+    let saved = || app.session.active().unwrap().doc.paths.iter().find(|path| path.name == "Saved").unwrap().path.clone();
+    let added = saved();
+    assert_eq!(added.subpaths[0].knots.len(), 5);
+    assert_eq!(work(&app), before_work);
+    assert_eq!(steps(&app), n + 1);
+    app.ui.tool = Tool::DeleteAnchorPoint;
+    let anchor = added.subpaths[0].knots[3].anchor;
+    click(&mut app, [anchor.x, anchor.y], Modifiers::NONE);
+    let deleted = app.session.active().unwrap().doc.paths.iter().find(|path| path.name == "Saved").unwrap().path.clone();
+    assert_eq!(deleted.subpaths[0].knots.len(), 4);
+    assert_eq!(work(&app), before_work);
+    assert_eq!(steps(&app), n + 2);
+    assert!(app.session.undo());
+    assert_eq!(app.session.active().unwrap().doc.paths.iter().find(|path| path.name == "Saved").unwrap().path, added);
 }
