@@ -3135,3 +3135,6 @@ curves	Smooth	Glätten
 @plural	{n} action|{n} actions	{n} Aktion|{n} Aktionen
 	Auto Add/Delete	Autom. hinzuf./löschen
 	ICO is limited to 256 × 256 pixels	ICO ist auf 256 × 256 Pixel begrenzt
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Malt aus dem Quellzustand des Protokollbedienfelds
+	Sets the source for the history brush	Legt die Quelle für den Protokollpinsel fest

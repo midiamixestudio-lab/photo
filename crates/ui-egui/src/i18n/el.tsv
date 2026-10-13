@@ -3835,3 +3835,6 @@ curves	Smooth	Εξομάλυνση
 @plural	{n} action|{n} actions	{n} ενέργεια|{n} ενέργειες
 	Auto Add/Delete	Αυτόματη προσθήκη/διαγραφή
 	ICO is limited to 256 × 256 pixels	Το ICO περιορίζεται σε 256 × 256 εικονοστοιχεία
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Βάφει από την κατάσταση πηγής του πίνακα Ιστορικό
+	Sets the source for the history brush	Ορίζει την πηγή για το πινέλο ιστορικού

@@ -3126,3 +3126,6 @@ curves	Smooth	Haluskan
 @plural	{n} action|{n} actions	{n} tindakan
 	Auto Add/Delete	Tambah/Hapus Otomatis
 	ICO is limited to 256 × 256 pixels	ICO dibatasi hingga 256 × 256 piksel
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Melukis dari status sumber panel Riwayat
+	Sets the source for the history brush	Menetapkan sumber untuk kuas riwayat

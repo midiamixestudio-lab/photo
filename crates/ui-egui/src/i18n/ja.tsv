@@ -3815,3 +3815,6 @@ curves	Smooth	スムーズ
 	Reset All Locked Settings	ロックされた設定をすべて初期化
 	Copy Texture to Other Tools	テクスチャを他のツールにコピー
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	ヒストリーパネルのソース状態からペイントします
+	Sets the source for the history brush	ヒストリーブラシのソースを設定します

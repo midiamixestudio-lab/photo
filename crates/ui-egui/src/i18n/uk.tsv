@@ -3836,3 +3836,6 @@ curves	Smooth	Згладити
 @plural	{n} action|{n} actions	{n} операція|{n} операції|{n} операцій
 	Auto Add/Delete	Автододавання/видалення
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Малює з вихідного стану панелі «Історія»
+	Sets the source for the history brush	Задає джерело для пензля історії

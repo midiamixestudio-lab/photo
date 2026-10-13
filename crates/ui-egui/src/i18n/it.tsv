@@ -4100,3 +4100,6 @@ navigator	Zoom	Zoom
 @plural	{n} action|{n} actions	{n} azione|{n} azioni
 	Auto Add/Delete	Aggiungi/elimina automaticamente
 	ICO is limited to 256 × 256 pixels	ICO è limitato a 256 × 256 pixel
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Dipinge dallo stato di origine del pannello Cronologia
+	Sets the source for the history brush	Imposta l'origine del pennello storia

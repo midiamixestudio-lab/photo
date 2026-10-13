@@ -3927,3 +3927,6 @@ layerLabel	No Color	Sem cor
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Pinta a partir do estado de origem do painel Histórico
+	Sets the source for the history brush	Define a origem do pincel do histórico

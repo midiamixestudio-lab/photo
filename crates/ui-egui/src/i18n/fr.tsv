@@ -3139,3 +3139,6 @@ curves	Smooth	Lisser
 @plural	{n} action|{n} actions	{n} action|{n} actions
 	Auto Add/Delete	Ajout/suppr. auto
 	ICO is limited to 256 × 256 pixels	Le format ICO est limité à 256 × 256 pixels
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Peint à partir de l'état source du panneau Historique
+	Sets the source for the history brush	Définit la source du pinceau d'historique

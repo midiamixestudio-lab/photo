@@ -3745,3 +3745,6 @@ navigator	Zoom	Zvětšení
 @plural	{n} action|{n} actions	{n} akce|{n} akce|{n} akcí
 	Auto Add/Delete	Automaticky přidat/odstranit
 	ICO is limited to 256 × 256 pixels	ICO je omezen na 256 × 256 pixelů
+# History panel › History Brush source (#2966)
+	Paints from the History panel's source state	Maluje ze zdrojového stavu panelu Historie
+	Sets the source for the history brush	Nastaví zdroj pro štětec historie
