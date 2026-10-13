@@ -95,6 +95,9 @@ pub fn display_doc(app: &PhotocraftApp, idx: usize) -> Option<(Arc<Document>, u6
         return Some((p.preview_doc.clone(), (1 << 42) + p.key));
     }
     if let Some(p) = &app.distort.perspective {
+        if !crate::perspective_ui::bound_to_active_document(app, p) {
+            return None;
+        }
         return Some((p.preview_doc.clone(), (1 << 42) + p.key));
     }
     None
@@ -137,8 +140,10 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) ->
         crate::puppet_ui::pointer(app, ev, mods);
         return true;
     }
-    if app.distort.perspective.is_some() {
-        crate::perspective_ui::pointer(app, ev, mods);
+    if let Some(p) = &app.distort.perspective {
+        if crate::perspective_ui::bound_to_active_document(app, p) {
+            crate::perspective_ui::pointer(app, ev, mods);
+        }
         return true;
     }
     if app.distort.vanishing.is_some() {
@@ -187,7 +192,7 @@ pub fn keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
     }
     if app.distort.perspective.is_some() {
         if enter(ctx) {
-            crate::perspective_ui::commit(app);
+            let _ = crate::perspective_ui::commit(app);
         } else if esc(ctx) {
             app.distort.perspective = None;
         }
@@ -211,7 +216,9 @@ pub fn draw_overlay(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform
     if let Some(p) = &app.distort.puppet {
         crate::puppet_ui::draw(p, painter, xf);
     }
-    if let Some(p) = &app.distort.perspective {
+    if let Some(p) = &app.distort.perspective
+        && crate::perspective_ui::bound_to_active_document(app, p)
+    {
         crate::perspective_ui::draw(p, painter, xf);
     }
     if let Some(v) = &app.distort.vanishing {
@@ -225,7 +232,9 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> bool {
         crate::puppet_ui::options_bar(app, ui);
         return true;
     }
-    if app.distort.perspective.is_some() {
+    if let Some(p) = &app.distort.perspective
+        && crate::perspective_ui::bound_to_active_document(app, p)
+    {
         crate::perspective_ui::options_bar(app, ui);
         return true;
     }

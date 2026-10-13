@@ -43,6 +43,26 @@ fn unit_to_quad(q: &[[f64; 2]; 4]) -> Option<Homography> {
     Homography::rect_to_quad([0.0, 0.0, 1.0, 1.0], *q)
 }
 
+/// A valid perspective plane must remain a strictly convex quadrilateral. The homography
+/// solver alone can return a matrix even when the destination collapses to a point or when
+/// consecutive edges cross; accepting such a map can silently deform or destroy pixels.
+/// Both orientations are allowed (e.g. a deliberate mirror).
+fn valid_quad(q: &[[f64; 2]; 4]) -> bool {
+    let mut direction = 0.0_f64;
+    for i in 0..4 {
+        let (a, b, c) = (q[i], q[(i + 1) % 4], q[(i + 2) % 4]);
+        let cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if !cross.is_finite() || cross.abs() <= 1.0e-9 {
+            return false;
+        }
+        if direction != 0.0 && cross.signum() != direction {
+            return false;
+        }
+        direction = cross.signum();
+    }
+    true
+}
+
 /// Groups of linked corners: `(plane, corner)` pairs that coincide in the source.
 pub fn linked_corners(planes: &[Plane]) -> Vec<Vec<(usize, usize)>> {
     let mut groups: Vec<Vec<(usize, usize)>> = Vec::new();
@@ -159,6 +179,9 @@ impl PerspectiveMap {
         }
         let mut planes = planes.to_vec();
         unify(&mut planes);
+        if planes.iter().any(|p| !valid_quad(&p.src) || !valid_quad(&p.dst)) {
+            return None;
+        }
         let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() <= LINK_EPS && (a[1] - b[1]).abs() <= LINK_EPS;
         let mut maps = Vec::with_capacity(planes.len());
         for (i, p) in planes.iter().enumerate() {
@@ -268,6 +291,18 @@ mod tests {
 
     fn close(a: (f64, f64), b: (f64, f64), tol: f64) -> bool {
         (a.0 - b.0).abs() <= tol && (a.1 - b.1).abs() <= tol
+    }
+
+    #[test]
+    fn reject_collapsed_and_crossing_quads_before_warping() {
+        let square = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
+        let collapsed = [[4.0, 4.0]; 4];
+        let crossing = [[0.0, 0.0], [100.0, 100.0], [100.0, 0.0], [0.0, 100.0]];
+        assert!(PerspectiveMap::new(&[Plane { src: square, dst: collapsed }]).is_none());
+        assert!(PerspectiveMap::new(&[Plane { src: crossing, dst: square }]).is_none());
+        assert!(PerspectiveMap::new(&[Plane { src: square, dst: crossing }]).is_none());
+        let mirrored = [[100.0, 0.0], [0.0, 0.0], [0.0, 100.0], [100.0, 100.0]];
+        assert!(PerspectiveMap::new(&[Plane { src: square, dst: mirrored }]).is_some());
     }
 
     #[test]
