@@ -47,6 +47,7 @@ let out = encode(&img, Format::Tiff, &EncodeOptions::default())?;
 | Radiance HDR | yes | yes | F32 | RGB | no | no | no | no | no | no | yes (RGBE) | `image` |
 | FITS | yes | yes | U8, U16, F32 | Gray, RGB | no | no | no | no | no | yes (header cards) | no | built in |
 | DPX | yes | yes | U8, U16 (10/12-bit code values read and written exactly through U16) | Gray, RGB, RGBA | yes | no | no | no | no | DPX header fields only (creator, project, copyright, creation time, transfer, colorimetric, frame position, frame rate, time code) | no | built in |
+| DICOM | yes | **no** | U8, U16 | Gray, RGB | no | no | no | no | no | no | n/a | built in |
 | AVIF | **no** | only with feature `avif` | U8 | RGB, RGBA | yes | no | no | no | no | no | yes | `image` + `ravif` |
 | HEIF/HEIC | with feature `heif` | **no** | U8, U16 (10/12-bit decodes to U16) | RGB, RGBA | yes (auxiliary alpha) | yes (`colr` prof) | yes | yes | no | no | n/a | `heic-rs` |
 
@@ -94,6 +95,15 @@ embedded table (and a PNG's transparent entry) so `photocraft-io` can open them 
   U8 and 16 otherwise), packing 1 for 10 and 12 bits; gray with alpha is written as luma.
   Other descriptors, signed or run-length-encoded data and other bit depths return
   `CodecError::Unsupported` naming the field. Cineon (`.cin`) is not supported.
+
+* **DICOM (read-only).** Single-frame medical images over the uncompressed transfer syntaxes
+  (implicit VR little-endian, explicit VR little/big-endian): MONOCHROME1/2 gray (with the
+  1 = white inversion) and RGB/YBR_FULL, 8- and 16-bit allocated samples, interleaved or planar,
+  scaled from `BitsStored`/`HighBit` and mapped up when `PixelRepresentation` is signed.
+  Undefined-length sequences outside the pixel data are skipped, as clinical files contain them.
+  Compressed transfer syntaxes, sequences over the pixel data and other photometric
+  interpretations return `Unsupported`/`Malformed`. There is no DICOM writer
+  (`ASYMMETRIC_EXCEPTIONS`).
 
 * **Camera raw files** (DNG, CR2, NEF, ARW… which are TIFF-structured) are recognised and refused
   with `CodecError::Unsupported`: they are sensor data, not flat images. `photocraft-raw` decodes

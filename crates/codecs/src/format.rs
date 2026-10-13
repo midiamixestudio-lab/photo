@@ -33,6 +33,8 @@ pub enum Format {
     Fits,
     /// DPX (SMPTE 268M Digital Picture Exchange): luma, RGB or RGBA film and video frames.
     Dpx,
+    /// DICOM single-frame images (uncompressed): read-only.
+    Dicom,
 }
 
 /// What a format can hold **and** what this crate reads/writes for it.
@@ -66,6 +68,10 @@ pub struct FormatCaps {
 pub const ASYMMETRIC_EXCEPTIONS: &[(Format, &str)] = &[
     (Format::Xpm, "XPM is a legacy Unix icon interchange format. Reading existing XPM icons is supported; writing modern image assets should use PNG instead."),
     (
+        Format::Dicom,
+        "DICOM single-frame images are imported for medical review; this crate has no DICOM writer, so save an imported frame as TIFF or PNG instead.",
+    ),
+    (
         Format::Pcx,
         "PCX is supported for opening legacy paint and clipart assets. New files should use PNG; writing obsolete indexed and planar variants is intentionally not provided.",
     ),
@@ -95,7 +101,7 @@ const ALL_LAYOUTS: &[ChannelLayout] = &[L::Gray, L::GrayA, L::Rgb, L::Rgba, L::C
 
 impl Format {
     /// Every format known to the crate (enabled or not).
-    pub const ALL: [Format; 19] = [
+    pub const ALL: [Format; 20] = [
         Format::Png,
         Format::Jpeg,
         Format::Tiff,
@@ -115,6 +121,7 @@ impl Format {
         Format::Heif,
         Format::Fits,
         Format::Dpx,
+        Format::Dicom,
     ];
 
     pub fn caps(self) -> FormatCaps {
@@ -148,6 +155,7 @@ impl Format {
             Format::Heif => "HEIF",
             Format::Fits => "FITS",
             Format::Dpx => "DPX",
+            Format::Dicom => "DICOM",
         }
     }
 
@@ -174,6 +182,7 @@ impl Format {
             Format::Heif => &["heic", "heif", "hif"],
             Format::Fits => &["fits", "fit", "fts"],
             Format::Dpx => &["dpx"],
+            Format::Dicom => &["dcm", "dicom", "dc3"],
         }
     }
 
@@ -198,6 +207,7 @@ impl Format {
             Format::Heif => "image/heif",
             Format::Fits => "image/fits",
             Format::Dpx => "image/x-dpx",
+            Format::Dicom => "application/dicom",
         }
     }
 
@@ -253,6 +263,7 @@ pub fn caps(format: Format) -> FormatCaps {
         Format::Fits => FormatCaps { depths: &[S::U8, S::U16, S::F32], layouts: &[L::Gray, L::Rgb], alpha: false, text: true, ..base },
         // `text`: the DPX header fields only (see `fidelity_warnings_with`).
         Format::Dpx => FormatCaps { depths: &[S::U8, S::U16], layouts: &[L::Gray, L::Rgb, L::Rgba], text: true, ..base },
+        Format::Dicom => FormatCaps { read: true, write: false, depths: &[S::U8, S::U16], layouts: &[L::Gray, L::Rgb], alpha: false, ..base },
     }
 }
 
@@ -306,6 +317,9 @@ pub fn detect(bytes: &[u8]) -> Option<Format> {
     }
     if b.starts_with(b"SDPX") || b.starts_with(b"XPDS") {
         return Some(Format::Dpx);
+    }
+    if crate::codecs::dicom::is_dicom(b) {
+        return Some(Format::Dicom);
     }
     if b.starts_with(b"SIMPLE  =") {
         return Some(Format::Fits);
