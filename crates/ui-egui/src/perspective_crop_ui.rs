@@ -99,14 +99,13 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent) -> bool {
         return true;
     }
     cancel_stale(app);
-    let tol = crate::distort_ui::tolerance(app);
+    let metric = crate::canvas::ScreenMetric::active(app);
     match ev {
         ToolEvent::Down { .. } => {
             app.pcrop.drag = match app.ui.perspective_crop {
                 Some(q) => {
-                    let near = (0..4)
-                        .filter(|&i| (q[i][0] - p[0]).hypot(q[i][1] - p[1]) <= tol)
-                        .min_by(|&i, &j| (q[i][0] - p[0]).hypot(q[i][1] - p[1]).total_cmp(&(q[j][0] - p[0]).hypot(q[j][1] - p[1])));
+                    let near =
+                        (0..4).filter(|&i| metric.distance(q[i], p) <= 8.0).min_by(|&i, &j| metric.distance(q[i], p).total_cmp(&metric.distance(q[j], p)));
                     match near {
                         Some(index) => Some(Drag::Corner { index, offset: [p[0] - q[index][0], p[1] - q[index][1]] }),
                         None if inside(&q, p) => Some(Drag::Move { start: p, quad: q }),
@@ -120,8 +119,7 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent) -> bool {
         ToolEvent::Up { .. } => {
             drag_to(app, p);
             if let Some(Drag::New { start, cur }) = app.pcrop.drag {
-                let click = tol * CLICK_PX / 8.0;
-                if (cur[0] - start[0]).abs() <= click && (cur[1] - start[1]).abs() <= click {
+                if metric.distance(cur, start) <= CLICK_PX {
                     app.pcrop.clicks.push(start);
                     if let [a, b, c, d] = app.pcrop.clicks[..] {
                         app.ui.perspective_crop = Some(ordered([a, b, c, d]));
@@ -322,5 +320,29 @@ mod tests {
         assert_eq!((size.width, size.height), (110, 86), "the quad's mean side lengths");
 
         assert_eq!(ordered([[10.0, 90.0], [100.0, 5.0], [0.0, 0.0], [90.0, 100.0]]), [[0.0, 0.0], [100.0, 5.0], [90.0, 100.0], [10.0, 90.0]]);
+    }
+    #[test]
+    fn aspect_perspective_crop_corner_has_screen_radius() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                a.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+                a.sync_views();
+                a.ui.tool = Tool::PerspectiveCrop;
+                a.ppp = ppp;
+                a.ui.views[0].zoom = ppp;
+                a.ui.views[0].rotation = 37.0;
+                a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                a.ui.perspective_crop = Some([[40.0, 40.0], [140.0, 40.0], [140.0, 140.0], [40.0, 140.0]]);
+                for (points, expected) in [(2.0, true), (25.0, false)] {
+                    pointer(&mut a, ToolEvent::Down { x: 40.0 - points / aspect, y: 40.0, pressure: 1.0 });
+                    assert_eq!(matches!(a.pcrop.drag, Some(Drag::Corner { index: 0, .. })), expected, "aspect={aspect}, ppp={ppp}, points={points}");
+                }
+                cancel(&mut a);
+                pointer(&mut a, ToolEvent::Down { x: 40.0, y: 40.0, pressure: 1.0 });
+                pointer(&mut a, ToolEvent::Up { x: 40.0 + 2.0 / aspect, y: 40.0 });
+                assert_eq!(a.pcrop.clicks, vec![[40.0, 40.0]], "a two-point drag stays a click");
+            }
+        }
     }
 }

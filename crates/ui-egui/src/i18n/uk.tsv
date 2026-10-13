@@ -412,6 +412,10 @@
 	Proof Setup	Налаштування кольоропроби
 	Proof Colors	Кольори кольоропроби
 	Pixel Aspect Ratio	Співвідношення сторін пікселя
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Попередній перегляд щетинних пензлів ще не реалізовано
+	Artboard-specific guides are not implemented	Напрямні окремих монтажних областей ще не реалізовано
+
 	Pixel Aspect Ratio Correction	Корекція співвідношення сторін пікселя
 	Zoom In	Збільшити
 	Zoom Out	Зменшити

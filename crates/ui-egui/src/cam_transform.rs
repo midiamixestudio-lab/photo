@@ -1,6 +1,6 @@
 //! Content-Aware Move › Transform On Drop (the options-bar checkbox, as in Photoshop): after the
 //! drop a transform box sits on the moved patch. Its handles are the Free Transform box's
-//! ([`crate::transform_tool::hit`], [`crate::transform_tool::apply_drag`]), limited to moving,
+//! ([`crate::transform_tool::hit_metric`], [`crate::transform_tool::apply_drag`]), limited to moving,
 //! scaling and rotating; ↩, ✓ or a double-click computes the blend with the transformed patch
 //! (`paint.contentAwareMove` with `scaleX`, `scaleY` and `rotate`), Esc or ⊘ drops the whole move.
 //! The document is untouched until then, so the move stays one History step.
@@ -145,7 +145,7 @@ pub(crate) fn commit(app: &mut PhotocraftApp) {
 /// during Free Transform). Returns false when there is no box.
 pub(crate) fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: Modifiers) -> bool {
     cancel_stale(app);
-    let tol = crate::transform_tool::handle_tolerance(app);
+    let metric = crate::canvas::ScreenMetric::active(app);
     let legacy = app.session.prefs().general.use_legacy_free_transform;
     let Some(t) = app.ui.cam_transform.as_mut() else { return false };
     match ev {
@@ -154,7 +154,7 @@ pub(crate) fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: Modifiers) -
             if !p.iter().all(|v| v.is_finite()) {
                 return true;
             }
-            let mut h = crate::transform_tool::hit(&t.frame, p, tol);
+            let mut h = crate::transform_tool::hit_metric(&t.frame, p, metric);
             // ⌥-click away from the handles moves the reference point there (and drags it).
             if mods.alt && matches!(h, Hit::Inside | Hit::Outside) {
                 t.frame.pivot = p;
@@ -204,7 +204,7 @@ pub(crate) fn draw(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform)
 pub(crate) fn cursor(app: &PhotocraftApp, ctx: &egui::Context, xf: &ViewXform, p: Pos2) -> Option<CursorIcon> {
     let t = app.ui.cam_transform.as_ref().filter(|_| app.ui.tool == Tool::ContentAwareMove)?;
     let q = t.frame.quad;
-    let h = t.gesture.map_or_else(|| crate::transform_tool::hit(&t.frame, xf.to_doc(p), crate::transform_tool::handle_tolerance(app)), |g| g.hit);
+    let h = t.gesture.map_or_else(|| crate::transform_tool::hit_screen(app, &t.frame, xf.to_doc(p)), |g| g.hit);
     let mid = |i: usize| -> Option<[f64; 2]> {
         let (a, b) = (q.get(i % 4)?, q.get((i + 1) % 4)?);
         Some([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])
@@ -225,4 +225,57 @@ pub(crate) fn cursor(app: &PhotocraftApp, ctx: &egui::Context, xf: &ViewXform, p
         Hit::Pivot => CursorIcon::Crosshair,
         Hit::Inside => CursorIcon::Move,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn transformed_move_cursor_and_press_share_screen_sized_handles() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for rotation in [0.0, 37.0] {
+                    for flip in [false, true] {
+                        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+                        app.run("file.new", json!({"width": 512, "height": 512})).unwrap();
+                        app.run("select.all", json!({})).unwrap();
+                        app.ui.tool = Tool::ContentAwareMove;
+                        app.ui.view.pixel_aspect = format!("custom:{aspect}");
+                        app.ui.view.pixel_aspect_correction = true;
+                        app.ui.view.flip_horizontal = flip;
+                        app.ui.views[0].zoom = 1.0;
+                        app.ui.views[0].rotation = rotation;
+                        app.ppp = ppp;
+                        assert!(begin(&mut app, [100, 100]));
+                        let xf = ViewXform::active(&app).unwrap();
+                        let at = xf.to_screen(100.0, 100.0);
+                        // Point away from the box so overlapping handle grab areas stay irrelevant.
+                        let outward = xf.map_vec_unscaled(egui::vec2(-1.0, 0.0)).normalized();
+                        let ctx = egui::Context::default();
+                        let corner_cursor = cursor(&app, &ctx, &xf, at).unwrap();
+                        for (distance, grabs_corner) in [(7.0, true), (20.0, false)] {
+                            app.ui.cam_transform.as_mut().unwrap().gesture = None;
+                            let screen = at + outward * distance;
+                            let hover = cursor(&app, &ctx, &xf, screen).unwrap();
+                            let p = xf.to_doc(screen);
+                            assert!(pointer(&mut app, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, Modifiers::NONE));
+                            let hit = app.ui.cam_transform.as_ref().unwrap().gesture.unwrap().hit;
+                            assert_eq!(
+                                hit == Hit::Corner(0),
+                                grabs_corner,
+                                "press: aspect{aspect}, ppp{ppp}, rotation{rotation}, flip{flip}, distance{distance}"
+                            );
+                            assert_eq!(
+                                hover == corner_cursor,
+                                grabs_corner,
+                                "hover: aspect{aspect}, ppp{ppp}, rotation{rotation}, flip{flip}, distance{distance}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

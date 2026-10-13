@@ -716,6 +716,10 @@
 	Pixel Art	Pixelgrafika
 	Pixel Art Preview	Pixelgrafikus előnézet
 	Pixel Aspect Ratio	Pixelarány
+# Unsupported view controls
+	Bristle brush previews are not implemented	A sörteecset előnézete még nincs megvalósítva.
+	Artboard-specific guides are not implemented	A rajztáblához tartozó segédvonalak még nincsenek megvalósítva.
+
 	Pixel Aspect Ratio Correction	Pixelarány-korrekció
 	Pixel Grid	Pixelrács
 	Pixelate	Pixelesítés

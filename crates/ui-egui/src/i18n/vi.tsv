@@ -617,6 +617,9 @@
 	Pattern Preview	Xem trước họa tiết
 	Pixel Art Preview	Xem trước pixel art
 	Pixel Aspect Ratio	Tỷ lệ khung pixel
+# View overlay availability (#1119)
+	Bristle brush previews are not implemented	Xem trước cọ lông chưa được triển khai
+	Artboard-specific guides are not implemented	Đường căn riêng cho artboard chưa được triển khai
 	Pixel Aspect Ratio Correction	Hiệu chỉnh tỷ lệ khung pixel
 	Pixel Grid	Lưới pixel
 	Print Size	Kích thước in

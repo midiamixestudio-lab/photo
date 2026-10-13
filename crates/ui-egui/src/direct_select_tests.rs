@@ -55,6 +55,134 @@ fn click(app: &mut PhotocraftApp, at: [f64; 2], mods: Modifiers) {
     drag(app, at, at, mods);
 }
 
+/// The unfinished Pen precheck and actual Direct Selection press must use the same screen reach.
+/// Leave the ordinary View Snap and pixel-grid preference enabled for this canvas-input control.
+#[test]
+fn aspect_review_unfinished_pen_hit_and_miss_share_direct_selection_screen_reach() {
+    eprintln!("VIEW_BE7_MATRIX_PLANNED hit-miss 32");
+    for tool in [Tool::Pen, Tool::CurvaturePen] {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for rotation in [0.0, 37.0] {
+                    for (distance, hit) in [(2.0, true), (25.0, false)] {
+                        let mut a = app(tool);
+                        for p in [[30.0, 30.0], [90.0, 30.0], [150.0, 60.0]] {
+                            click(&mut a, p, Modifiers::NONE);
+                        }
+                        assert!(a.ui.extras.snap && a.session.prefs().tools.snap_vector_tools_and_transforms_to_pixel_grid);
+                        let before = a.ui.pen.clone().unwrap();
+                        let n = steps(&a);
+                        assert!(a.session.active().unwrap().doc.work_path.is_none());
+                        a.ui.view.pixel_aspect = format!("custom:{aspect}");
+                        a.ui.view.pixel_aspect_correction = true;
+                        a.ui.views[0].zoom = ppp;
+                        a.ppp = ppp;
+                        a.ui.views[0].rotation = rotation;
+                        let xf = crate::canvas::ViewXform::active(&a).unwrap();
+                        let at = xf.to_screen(30.0, 30.0);
+                        let p = xf.to_doc(at - egui::vec2(distance, 0.0));
+                        let case = format!("{tool:?}, aspect={aspect}, ppp={ppp}, rotation={rotation}, distance={distance}, raw={p:?}");
+                        eprintln!("VIEW_BE7_CASE_BEGIN hit-miss {case}");
+                        tool_event(&mut a, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, Modifiers::COMMAND);
+                        assert_eq!(a.ui.pen.is_some(), hit, "{case}: only an off-path press finishes the path");
+                        if hit {
+                            assert!(matches!(&a.ui.direct_selection.drag, Some(Drag::Edit { target: PathRef::Pen, .. })), "{case}");
+                            assert_eq!(a.ui.pen.as_ref().unwrap().knots, before.knots, "{case}: no edit before release");
+                            assert!(a.session.active().unwrap().doc.work_path.is_none(), "{case}: still outside the document");
+                            assert_eq!(steps(&a), n, "{case}: no history step while the Pen path is unfinished");
+                        } else {
+                            let committed = work(&a);
+                            assert_eq!(committed.subpaths[0].knots.len(), before.knots.len(), "{case}");
+                            for (k, old) in committed.subpaths[0].knots.iter().zip(&before.knots) {
+                                assert_eq!(k.anchor, Point::new(old[0][0], old[0][1]), "{case}: off-path commit keeps the anchors");
+                            }
+                            assert_eq!(steps(&a), n + 1, "{case}: one ordinary path commit");
+                        }
+                        tool_event(&mut a, ToolEvent::Up { x: p[0], y: p[1] }, Modifiers::COMMAND);
+                        assert_eq!(a.ui.pen.is_some(), hit, "{case}: release keeps the selected flow");
+                        eprintln!("VIEW_BE7_CASE_DONE hit-miss {case}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An explicit no-Snap fixture isolates the existing one-logical-point release threshold.
+/// The default-Snap hit/miss matrix above and all original pointer oracles stay unchanged.
+#[test]
+fn aspect_review_unfinished_pen_release_uses_screen_movement_threshold() {
+    eprintln!("VIEW_BE7_MATRIX_PLANNED release 8");
+    for tool in [Tool::Pen, Tool::CurvaturePen] {
+        for aspect in [0.1, 10.0] {
+            for distance in [0.5, 2.0] {
+                let mut a = app(tool);
+                for p in [[30.0, 30.0], [90.0, 30.0], [150.0, 60.0]] {
+                    click(&mut a, p, Modifiers::NONE);
+                }
+                a.run("prefs.set", json!({"path": "tools.snapVectorToolsAndTransformsToPixelGrid", "value": false})).unwrap();
+                a.ui.extras.snap = false;
+                assert!(!a.session.prefs().tools.snap_vector_tools_and_transforms_to_pixel_grid);
+                a.ui.view.pixel_aspect = format!("custom:{aspect}");
+                a.ui.view.pixel_aspect_correction = true;
+                a.ui.views[0].zoom = 1.0;
+                a.ppp = 1.0;
+                let before = a.ui.pen.clone().unwrap();
+                let n = steps(&a);
+                let from = before.knots[0][0];
+                let to = [from[0] + distance / aspect, from[1]];
+                // ViewXform scales are f32; this fixture precondition allows their precision.
+                let measured = crate::canvas::ScreenMetric::active(&a).distance(from, to);
+                let precision = 4.0 * f64::from(f32::EPSILON) * distance.abs().max(1.0);
+                assert!((measured - distance).abs() < precision, "{tool:?}, aspect={aspect}, distance={distance}, measured={measured}");
+                let case = format!("{tool:?}, aspect={aspect}, distance={distance}, from={from:?}, to={to:?}");
+                eprintln!("VIEW_BE7_CASE_BEGIN release {case}");
+                tool_event(&mut a, ToolEvent::Down { x: from[0], y: from[1], pressure: 1.0 }, Modifiers::COMMAND);
+                assert!(matches!(&a.ui.direct_selection.drag, Some(Drag::Edit { target: PathRef::Pen, .. })), "{case}");
+                tool_event(&mut a, ToolEvent::Move { x: to[0], y: to[1], pressure: 1.0 }, Modifiers::COMMAND);
+                tool_event(&mut a, ToolEvent::Up { x: to[0], y: to[1] }, Modifiers::COMMAND);
+                let pen = a.ui.pen.as_ref().expect("the path stays unfinished");
+                let expected = if distance >= 1.0 { to } else { from };
+                assert!((pen.knots[0][0][0] - expected[0]).abs() < 1e-9, "{case}: {:?}", pen.knots[0][0]);
+                assert_eq!(pen.knots[0][0][1], expected[1], "{case}");
+                assert_eq!(pen.knots.len(), before.knots.len(), "{case}");
+                assert_eq!(pen.knots[1][0], before.knots[1][0], "{case}: only the selected anchor moves");
+                assert!(a.session.active().unwrap().doc.work_path.is_none(), "{case}");
+                assert_eq!(steps(&a), n, "{case}: unfinished edits do not enter document history");
+                eprintln!("VIEW_BE7_CASE_DONE release {case}");
+            }
+        }
+    }
+}
+
+#[test]
+fn aspect_review_path_anchor_gestures_match_screen_size() {
+    for aspect in [0.1, 10.0] {
+        for ppp in [1.0, 2.0] {
+            for rotation in [0.0, 37.0] {
+                let mut a = app(Tool::DirectSelection);
+                with_path(&mut a);
+                a.ui.view.pixel_aspect = format!("custom:{aspect}");
+                a.ui.view.pixel_aspect_correction = true;
+                a.ui.views[0].zoom = ppp;
+                a.ppp = ppp;
+                a.ui.views[0].rotation = rotation;
+                let xf = crate::canvas::ViewXform::active(&a).unwrap();
+                let at = xf.to_screen(40.0, 40.0);
+                for (delta, expected) in [(2.0, true), (25.0, false)] {
+                    let p = xf.to_doc(at - egui::vec2(delta, delta));
+                    tool_event(&mut a, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, Modifiers::NONE);
+                    assert_eq!(
+                        matches!(&a.ui.direct_selection.drag,Some(Drag::Edit{edit:super::Edit::Anchors(v),..}) if v==&vec![[0,0]]),
+                        expected,
+                        "{aspect} {rotation}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn dragging_an_anchor_moves_it_in_one_undoable_step() {
     let mut app = app(Tool::DirectSelection);

@@ -1411,6 +1411,7 @@ fn help_search(ui: &mut egui::Ui, items: &[MenuItem], opening: bool, clicked: &m
             }
             let hit = nav.row(ui, 0, it.enabled, Some(&it.id), |ui, _| {
                 let r = ui.add_enabled(it.enabled, b);
+                let r = if let Some(reason) = crate::view_cmds::unavailable_reason(&it.id) { r.on_disabled_hover_text(reason) } else { r };
                 let hit = r.clicked() || released_on(ui, &r);
                 (r, hit)
             });
@@ -1468,6 +1469,7 @@ fn render_level_rows(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, click
             }
             let hit = nav.row(ui, depth - 1, it.enabled, Some(&it.id), |ui, _| {
                 let r = ui.add_enabled(it.enabled, b);
+                let r = if let Some(reason) = crate::view_cmds::unavailable_reason(&it.id) { r.on_disabled_hover_text(reason) } else { r };
                 let r = match it.id.as_str() {
                     "image.mode.bits8" | "image.mode.bits16" => r.on_hover_text(crate::i18n::tr(lang, "Integer")),
                     "image.mode.bits32" => r.on_hover_text(crate::i18n::tr(lang, "Floating point")),
@@ -1561,6 +1563,31 @@ pub fn apply_workspace(app: &mut PhotocraftApp) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aspect_review_normal_show_menu_explains_unavailable_overlay() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(
+            |ui, app| {
+                menu_bar(app, ui);
+            },
+            app,
+        );
+        PhotocraftApp::setup_context(&h.ctx, Default::default());
+        h.ctx.global_style_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            s.interaction.tooltip_grace_time = 0.0;
+        });
+        h.run_steps(3);
+        h.get_by_label("View").click();
+        h.run_steps(3);
+        h.get_by_label("Show ⏵").hover();
+        h.run_steps(10);
+        let r = h.get_by_label_contains("Brush Preview").rect();
+        h.hover_at(r.center());
+        h.run_steps(10);
+        assert!(h.query_by_label("Bristle brush previews are not implemented").is_some());
+    }
 
     #[test]
     fn sync_with_system_menu_keeps_saved_slots_and_its_checkmark_across_palettes() {

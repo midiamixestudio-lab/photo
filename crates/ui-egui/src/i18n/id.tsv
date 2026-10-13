@@ -643,6 +643,10 @@
 	300%	300%
 	Print Size	Ukuran Cetak
 	Pixel Aspect Ratio	Rasio Aspek Piksel
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Pratinjau kuas bulu belum diimplementasikan
+	Artboard-specific guides are not implemented	Garis bantu khusus artboard belum diimplementasikan
+
 	Pixel Aspect Ratio Correction	Koreksi Rasio Aspek Piksel
 	Custom Pixel Aspect Ratio…	Rasio Aspek Piksel Kustom…
 	Square	Persegi

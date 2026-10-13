@@ -56,7 +56,7 @@ fn to_text(aff: &Affine, x: f64, y: f64) -> (f32, f32) {
 /// contains the document point.
 fn hit_layer(app: &mut PhotocraftApp, x: f64, y: f64) -> Option<LayerId> {
     let doc = app.session.active()?.doc.clone();
-    let slop = 6.0 / app.point_zoom().max(0.01);
+    let metric = crate::canvas::ScreenMetric::active(app);
     // A Type Mask session's text is a hidden layer; it is still the text being edited.
     let editing = app.ui.text_edit.as_ref().filter(|ed| ed.mask).map(|ed| LayerId(ed.layer));
     let mut ids: Vec<LayerId> = doc
@@ -70,12 +70,17 @@ fn hit_layer(app: &mut PhotocraftApp, x: f64, y: f64) -> Option<LayerId> {
         // The pixels shown count too: a PSD's type keeps Photoshop's rendering until edited,
         // which can sit off our layout when fonts are substituted (#123).
         let shown = text_layer(&doc, *id).and_then(|t| t.cache.as_ref()).map(|c| c.content_bounds()).is_some_and(|r| {
-            let s = f64::from(slop);
-            !r.is_empty() && x >= f64::from(r.x0) - s && x <= f64::from(r.x1) + s && y >= f64::from(r.y0) - s && y <= f64::from(r.y1) + s
+            !r.is_empty() && metric.near_quad([[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]].map(|p| p.map(f64::from)), [x, y], 6.0)
         });
         let Some((l, aff, _)) = layout(app, *id) else { return shown };
-        let (tx, ty) = to_text(&aff, x, y);
-        shown || photocraft_text::text_point_inside(&l, tx, ty, slop)
+        shown
+            || l.bounds().is_some_and(|b| {
+                let q = [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].map(|p| {
+                    let p = aff.apply(Point::new(f64::from(p[0]), f64::from(p[1])));
+                    [p.x, p.y]
+                });
+                metric.near_quad(q, [x, y], 6.0)
+            })
     })
 }
 
@@ -197,12 +202,12 @@ pub(crate) fn box_handle_at(app: &mut PhotocraftApp, id: LayerId, x: f64, y: f64
     let (r, b) = (bx + w, by + h);
     let (mx, my) = (bx + w / 2.0, by + h / 2.0);
     let spots = [(bx, by), (r, by), (r, b), (bx, b), (mx, by), (r, my), (mx, b), (bx, my)];
-    let tol = f64::from(6.0 / app.point_zoom().max(0.01));
+    let metric = crate::canvas::ScreenMetric::active(app);
     spots
         .iter()
         .position(|&(sx, sy)| {
             let p = aff.apply(Point::new(f64::from(sx), f64::from(sy)));
-            (p.x - x).abs() <= tol && (p.y - y).abs() <= tol
+            metric.distance([p.x, p.y], [x, y]) <= 6.0
         })
         .map(|i| i as u8)
 }
@@ -298,7 +303,7 @@ pub fn pointer_up(app: &mut PhotocraftApp, start: [f64; 2], end: [f64; 2]) {
         return;
     }
     let (w, h) = ((end[0] - start[0]).abs(), (end[1] - start[1]).abs());
-    let min = 4.0 / app.point_zoom().max(0.01) as f64;
+    let min = crate::canvas::ScreenMetric::active(app).reach(4.0);
     let o = app.ui.tool_options.clone();
     let mask = app.ui.tool.is_type_mask();
     // Preferences ▸ Type: "Fill new type layers with placeholder text" (on by default). The Type
@@ -313,7 +318,7 @@ pub fn pointer_up(app: &mut PhotocraftApp, start: [f64; 2], end: [f64; 2]) {
         "align": o.type_align,
         "color": hex(app.session.tools.foreground),
     });
-    if w >= min && h >= min {
+    if w >= min[0] && h >= min[1] {
         p["box"] = json!([start[0].min(end[0]).round(), start[1].min(end[1]).round(), w.round(), h.round()]);
     } else {
         p["x"] = json!(start[0].round());
@@ -2412,6 +2417,30 @@ mod font_picker_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aspect_review_paragraph_handle_picks_in_logical_points() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for rotation in [0.0, 37.0] {
+                    let mut a = app();
+                    pointer_up(&mut a, [10.0, 10.0], [310.0, 160.0]);
+                    a.ui.view.pixel_aspect = format!("custom:{aspect}");
+                    a.ui.view.pixel_aspect_correction = true;
+                    a.ui.views[0].zoom = ppp;
+                    a.ppp = ppp;
+                    a.ui.views[0].rotation = rotation;
+                    let xf = crate::canvas::ViewXform::active(&a).unwrap();
+                    let at = xf.to_screen(10.0, 10.0);
+                    let id = LayerId(a.ui.text_edit.as_ref().unwrap().layer);
+                    let p = xf.to_doc(at + egui::vec2(-2.0, -2.0));
+                    assert!(pointer_down(&mut a, p[0], p[1], egui::Modifiers::NONE));
+                    assert_eq!(a.ui.text_edit.as_ref().unwrap().resize, Some(0));
+                    let p = xf.to_doc(at + egui::vec2(-25.0, -25.0));
+                    assert_eq!(box_handle_at(&mut a, id, p[0], p[1]), None);
+                }
+            }
+        }
+    }
 
     fn app() -> PhotocraftApp {
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());

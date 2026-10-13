@@ -640,6 +640,10 @@
 	200%	200%
 	Print Size	Afdrukgrootte
 	Pixel Aspect Ratio	Pixelverhouding
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Voorvertoningen van penselen met haren zijn nog niet geïmplementeerd
+	Artboard-specific guides are not implemented	Hulplijnen voor afzonderlijke tekengebieden zijn nog niet geïmplementeerd
+
 	Pixel Aspect Ratio Correction	Correctie pixelverhouding
 	Custom Pixel Aspect Ratio…	Aangepaste pixelverhouding…
 	Square	Vierkant

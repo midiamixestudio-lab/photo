@@ -639,6 +639,9 @@
 	300%	300%
 	Print Size	Veličina za štampu
 	Pixel Aspect Ratio	Odnos stranica piksela
+
+	Artboard-specific guides are not implemented	Vodilje specifične za radne table nisu implementirane
+	Bristle brush previews are not implemented	Pregledi četkica sa čekinjama nisu implementirani
 	Pixel Aspect Ratio Correction	Korekcija odnosa stranica piksela
 	Custom Pixel Aspect Ratio…	Prilagođeni odnos stranica piksela…
 	Square	Kvadrat

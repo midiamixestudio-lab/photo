@@ -18,7 +18,7 @@ use photocraft_geom::Rect;
 use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
-use crate::canvas::{ToolEvent, ViewXform};
+use crate::canvas::{ScreenMetric, ToolEvent, ViewXform};
 use crate::edit_history::{EditHistory, Step};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -192,12 +192,12 @@ impl VpSession {
         Some([at(0.5, 0.0), at(1.0, 0.5), at(0.5, 1.0), at(0.0, 0.5)])
     }
 
-    fn press(&mut self, p: [f64; 2], tol: f64) {
+    fn press(&mut self, p: [f64; 2], metric: ScreenMetric) {
         if self.tool == VpTool::CreatePlane {
             self.add_corner(p);
             return;
         }
-        let near = |c: [f64; 2]| (c[0] - p[0]).hypot(c[1] - p[1]) <= tol;
+        let near = |c: [f64; 2]| metric.distance(c, p) <= 8.0;
         // The selected plane's nodes win over the others'.
         let order: Vec<usize> = self.selected.into_iter().chain((0..self.planes.len()).rev()).filter(|i| *i < self.planes.len()).collect();
         for &i in &order {
@@ -398,10 +398,10 @@ pub fn control(app: &mut PhotocraftApp, ui: &Value) -> Result<Value, String> {
 }
 
 pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, _mods: egui::Modifiers) {
-    let tol = crate::distort_ui::tolerance(app);
+    let metric = ScreenMetric::active(app);
     let Some(s) = app.distort.vanishing.as_mut() else { return };
     match ev {
-        ToolEvent::Down { x, y, .. } => s.press([x, y], tol),
+        ToolEvent::Down { x, y, .. } => s.press([x, y], metric),
         ToolEvent::Move { x, y, .. } => s.drag_to([x, y]),
         ToolEvent::Up { x, y } => {
             s.drag_to([x, y]);
@@ -595,6 +595,159 @@ mod tests {
         app.session.execute("edit.fill", json!({"color": "#4080c0"})).unwrap();
         app.sync_views();
         (ctx, app)
+    }
+
+    fn each_view(mut check: impl FnMut(&egui::Context, &mut PhotocraftApp)) {
+        let (ctx, mut app) = app_with_layer();
+        for aspect in [0.1, 1.0, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for zoom in [0.5, 3.0] {
+                    for rotation in [0.0, 37.0] {
+                        for flip in [false, true] {
+                            app.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                            app.ui.view.pixel_aspect_correction = true;
+                            app.ui.view.flip_horizontal = flip;
+                            app.ppp = ppp;
+                            app.ui.views[0].zoom = zoom;
+                            app.ui.views[0].rotation = rotation;
+                            app.ui.views[0].center = [2100.0, 2100.0];
+                            begin(&mut app, &ctx).unwrap();
+                            control(&mut app, &json!({"tool":"edit", "planes":[{"corners": separated_quad()}]})).unwrap();
+                            check(&ctx, &mut app);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Even at the smallest mapped x scale, adjacent corner/edge nodes are 50 points apart.
+    // This keeps the test about the hit radius rather than intentional node priority.
+    fn separated_quad() -> [[f64; 2]; 4] {
+        [[100.0, 100.0], [4100.0, 100.0], [4100.0, 4100.0], [100.0, 4100.0]]
+    }
+
+    fn down(app: &mut PhotocraftApp, p: [f64; 2]) {
+        crate::distort_ui::pointer(app, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, egui::Modifiers::NONE);
+    }
+
+    fn up(app: &mut PhotocraftApp, p: [f64; 2]) {
+        crate::distort_ui::pointer(app, ToolEvent::Up { x: p[0], y: p[1] }, egui::Modifiers::NONE);
+    }
+
+    fn nodes_have_screen_radius(edge: bool, inside: bool) {
+        each_view(|_, app| {
+            let xf = ViewXform::active(app).unwrap();
+            let before = app.session.active().unwrap().history.past_len();
+            for index in 0..4 {
+                for direction in [egui::vec2(1.0, 0.0), egui::vec2(0.0, 1.0), egui::vec2(0.6, 0.8)] {
+                    control(app, &json!({"planes":[{"corners": separated_quad()}]})).unwrap();
+                    let s = app.distort.vanishing.as_ref().unwrap();
+                    let node = if edge { s.edge_nodes(0).unwrap()[index] } else { s.planes[0].corners[index] };
+                    let screen = xf.to_screen(node[0] as f32, node[1] as f32);
+                    let radius = if inside { 7.0 } else { 9.0 };
+                    let p = xf.to_doc(screen + direction * radius);
+                    down(app, p);
+                    let s = app.distort.vanishing.as_ref().unwrap();
+                    let picked = if edge {
+                        matches!(s.drag, Some(Drag::Edge { plane: 0, edge, .. }) if edge == index)
+                    } else {
+                        matches!(s.drag, Some(Drag::Corner { plane: 0, corner, .. }) if corner == index)
+                    };
+                    assert_eq!(picked, inside, "edge={edge}, node={index}, radius={radius}, direction={direction:?}, view={xf:?}");
+                    if !inside {
+                        assert!(s.drag.is_none(), "a node outside the radius must not grab another node");
+                    }
+                    assert_eq!(s.planes[0].corners, separated_quad(), "pressing does not edit a plane");
+                    assert_eq!(app.session.active().unwrap().history.past_len(), before);
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn corner_nodes_pick_inside_eight_logical_points() {
+        nodes_have_screen_radius(false, true);
+    }
+
+    #[test]
+    fn corner_nodes_refuse_outside_eight_logical_points() {
+        nodes_have_screen_radius(false, false);
+    }
+
+    #[test]
+    fn edge_nodes_pick_inside_eight_logical_points() {
+        nodes_have_screen_radius(true, true);
+    }
+
+    #[test]
+    fn edge_nodes_refuse_outside_eight_logical_points() {
+        nodes_have_screen_radius(true, false);
+    }
+
+    #[test]
+    fn screen_picking_keeps_native_corner_grab_offsets_and_edge_geometry() {
+        each_view(|_, app| {
+            let xf = ViewXform::active(app).unwrap();
+            let q = separated_quad();
+            let p = xf.to_doc(xf.to_screen(q[0][0] as f32, q[0][1] as f32) + egui::vec2(3.0, -4.0));
+            down(app, p);
+            assert!(matches!(app.distort.vanishing.as_ref().unwrap().drag, Some(Drag::Corner { corner: 0, .. })));
+            up(app, [p[0] + 11.0, p[1] + 7.0]);
+            let s = app.distort.vanishing.as_ref().unwrap();
+            assert_eq!(s.planes[0].corners, [[111.0, 107.0], q[1], q[2], q[3]]);
+            assert!(s.drag.is_none());
+
+            control(app, &json!({"planes":[{"corners": q}]})).unwrap();
+            let s = app.distort.vanishing.as_ref().unwrap();
+            let h = s.planes[0].homography().unwrap();
+            let node = s.edge_nodes(0).unwrap()[0];
+            down(app, node);
+            let (x, y) = h.apply(0.5, -0.03);
+            up(app, [x, y]);
+            let expected = slid_quad(&h, 0.0, -0.03, 1.0, 1.0).unwrap();
+            let s = app.distort.vanishing.as_ref().unwrap();
+            for (actual, expected) in s.planes[0].corners.iter().zip(expected) {
+                assert!((actual[0] - expected[0]).hypot(actual[1] - expected[1]) < 1e-8);
+            }
+            assert!(s.drag.is_none());
+        });
+    }
+
+    #[test]
+    fn plane_body_and_paste_stay_in_native_perspective_coordinates() {
+        each_view(|ctx, app| {
+            let xf = ViewXform::active(app).unwrap();
+            let s = app.distort.vanishing.as_mut().unwrap();
+            s.clip = Some(Clip {
+                texture: ctx.load_texture("vp-test-paste", egui::ColorImage::filled([1, 1], Color32::RED), Default::default()),
+                width: 20.0,
+                height: 20.0,
+            });
+            s.paste = true;
+            let (h, lu, lv) = s.frame(0).unwrap();
+            let ext = s.paste_extent(lu, lv).unwrap();
+            let uv = [s.paste_at[0] + ext[0] * 0.4, s.paste_at[1] + ext[1] * 0.4];
+            let (x, y) = h.apply(uv[0], uv[1]);
+            let p = xf.to_doc(xf.to_screen(x as f32, y as f32));
+            down(app, p);
+            assert!(matches!(app.distort.vanishing.as_ref().unwrap().drag, Some(Drag::Paste { .. })));
+            let (u, v) = h.inverse().unwrap().apply(p[0], p[1]);
+            let (x, y) = h.apply(u + 0.05, v + 0.07);
+            up(app, [x, y]);
+            let s = app.distort.vanishing.as_ref().unwrap();
+            assert!((s.paste_at[0] - 0.30).abs() < 1e-8 && (s.paste_at[1] - 0.32).abs() < 1e-8);
+            assert_eq!(s.planes[0].corners, separated_quad());
+            assert!(s.drag.is_none());
+
+            control(app, &json!({"paste":false, "planes":[{"corners": separated_quad()}]})).unwrap();
+            let (x, y) = h.apply(0.3, 0.3);
+            down(app, xf.to_doc(xf.to_screen(x as f32, y as f32)));
+            let s = app.distort.vanishing.as_ref().unwrap();
+            assert_eq!(s.selected, Some(0));
+            assert!(s.drag.is_none(), "the plane body selects without grabbing a node");
+            assert_eq!(s.planes[0].corners, separated_quad());
+        });
     }
 
     #[test]

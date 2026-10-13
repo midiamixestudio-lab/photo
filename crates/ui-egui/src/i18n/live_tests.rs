@@ -426,3 +426,12 @@ fn czech_shortcut_conflicts_keep_warning_state_and_shortcut_codes() {
         assert_eq!(fields["overrides"]["file.new"], json!("Cmd+O"));
     });
 }
+
+#[test]
+fn aspect_unavailable_view_overlays_have_translations_in_every_complete_catalog() {
+    for language in Lang::all().filter(|language| language.complete_menus()) {
+        for reason in ["Bristle brush previews are not implemented", "Artboard-specific guides are not implemented"] {
+            assert!(has(language, reason), "{}: untranslated {reason}", language.code());
+        }
+    }
+}

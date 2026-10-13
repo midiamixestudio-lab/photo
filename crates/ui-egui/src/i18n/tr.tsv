@@ -628,6 +628,10 @@
 	200%	200%
 	Print Size	Baskı Boyutu
 	Pixel Aspect Ratio	Piksel En Boy Oranı
+# Unsupported view controls
+	Bristle brush previews are not implemented	Kıllı fırça önizlemeleri henüz uygulanmadı.
+	Artboard-specific guides are not implemented	Çalışma yüzeyine özgü kılavuzlar henüz uygulanmadı.
+
 	Pixel Aspect Ratio Correction	Piksel En Boy Oranı Düzeltme
 	Custom Pixel Aspect Ratio…	Özel Piksel En Boy Oranı…
 	Square	Kare

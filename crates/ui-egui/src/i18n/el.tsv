@@ -2821,6 +2821,10 @@
 	Pixel Art	Τέχνη εικονοστοιχείων
 	Pixel Art Preview	Προεπισκόπηση εικονογραφίας pixel
 	Pixel Aspect Ratio	Αναλογία διαστάσεων εικονοστοιχείων
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Οι προεπισκοπήσεις πινέλων με τρίχες δεν έχουν υλοποιηθεί
+	Artboard-specific guides are not implemented	Οι οδηγοί για μεμονωμένους πίνακες γραφικών δεν έχουν υλοποιηθεί
+
 	Pixel Aspect Ratio Correction	Διόρθωση αναλογίας εικονοστοιχείων
 	Pixel Grid	Πλέγμα εικονοστοιχείων
 	Pixel Length:	Μήκος σε εικονοστοιχεία:

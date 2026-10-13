@@ -199,14 +199,14 @@ pub fn guide_at(app: &PhotocraftApp, x: f64, y: f64) -> Option<(bool, usize)> {
         return None;
     }
     let doc = &app.session.active()?.doc;
-    let tol = 4.0 / app.point_zoom().max(0.01) as f64;
+    let reach = crate::canvas::ScreenMetric::active(app).reach(4.0);
     for (i, g) in doc.guides.vertical.iter().enumerate() {
-        if (*g - x).abs() <= tol {
+        if (*g - x).abs() <= reach[0] {
             return Some((true, i));
         }
     }
     for (i, g) in doc.guides.horizontal.iter().enumerate() {
-        if (*g - y).abs() <= tol {
+        if (*g - y).abs() <= reach[1] {
             return Some((false, i));
         }
     }
@@ -459,6 +459,123 @@ fn corner_origin(app: &mut PhotocraftApp, ui: &egui::Ui, resp: &egui::Response, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aspect_ruler_origin_keeps_both_axis_ranges_and_physical_tick_spacing() {
+        let full = Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0));
+        let zero = [140.0, 72.0];
+        for aspect in [0.1f32, 2.0, 10.0] {
+            for ppp in [1.0f32, 2.0] {
+                for rotation in [0.0f32, 37.0] {
+                    for flip in [false, true] {
+                        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+                        app.run("file.new", json!({"width": 256, "height": 128})).unwrap();
+                        app.sync_views();
+                        app.ppp = ppp;
+                        app.last_canvas_rect = full;
+                        app.ui.extras.rulers = true;
+                        app.ui.views[0].zoom = 1.0;
+                        app.ui.views[0].center = [128.0, 64.0];
+                        app.ui.views[0].rotation = rotation;
+                        app.ui.view.flip_horizontal = flip;
+                        app.ui.view.pixel_aspect = format!("custom:{aspect}:Ruler test");
+                        app.ui.view.pixel_aspect_correction = true;
+                        app.run("view.setRulerOrigin", json!({"x": zero[0], "y": zero[1]})).unwrap();
+                        let xf = ViewXform::active(&app).unwrap();
+                        let at = xf.to_screen(zero[0] as f32, zero[1] as f32);
+                        let case = format!("aspect={aspect}, ppp={ppp}, rotation={rotation}, flip={flip}");
+                        for vertical in [false, true] {
+                            let (a, b, extent, scale, origin) = if vertical {
+                                (xf.rect.left_top(), xf.rect.left_bottom(), xf.rect.height(), xf.zoom, at.y)
+                            } else {
+                                (xf.rect.left_top(), xf.rect.right_top(), xf.rect.width(), xf.zoom_x(), at.x)
+                            };
+                            assert!((ruler_pos(&xf, vertical, 0.0, 1.0, zero) - origin).abs() < 0.01, "zero follows the canvas: {case}, vertical={vertical}");
+                            let (lo, hi) = ruler_range(&xf, a, b, usize::from(vertical), 1.0, zero);
+                            assert!((hi - lo - f64::from(extent / scale)).abs() < 0.01, "full native range: {case}, vertical={vertical}");
+                            let reverse = !vertical && flip;
+                            let (first, last) = if reverse { (hi, lo) } else { (lo, hi) };
+                            let (start, end) = if vertical { (a.y, b.y) } else { (a.x, b.x) };
+                            assert!((ruler_pos(&xf, vertical, first, 1.0, zero) - start).abs() < 0.01, "first tick: {case}, vertical={vertical}");
+                            assert!((ruler_pos(&xf, vertical, last, 1.0, zero) - end).abs() < 0.01, "last tick: {case}, vertical={vertical}");
+                            let ten = ruler_pos(&xf, vertical, 10.0, 1.0, zero);
+                            let physical = (ten - origin).abs() * ppp;
+                            let expected = if vertical { 10.0 } else { 10.0 * aspect };
+                            assert!((physical - expected).abs() < 0.01, "ten native pixels at physical 100%: {case}, vertical={vertical}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aspect_ruler_corner_drag_shift_reset_and_undo_use_native_origin() {
+        let full = Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0));
+        // At physical 100%, these are the native-pixel minor tick steps on the two axes.
+        for (aspect, ppp, rotation, flip, ticks) in [
+            (0.1f32, 2.0f32, 37.0f32, true, [200.0, 20.0]),
+            (2.0, 1.0, 37.0, false, [5.0, 10.0]),
+            (10.0, 1.0, 0.0, true, [1.0, 10.0]),
+            (2.0, 2.0, 0.0, false, [10.0, 20.0]),
+        ] {
+            let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 256, "height": 128})).unwrap();
+            app.sync_views();
+            app.ppp = ppp;
+            app.last_canvas_rect = full;
+            app.ui.extras.rulers = true;
+            app.ui.extras.snap = false;
+            app.ui.views[0].zoom = 1.0;
+            app.ui.views[0].center = [128.0, 64.0];
+            app.ui.views[0].rotation = rotation;
+            app.ui.view.flip_horizontal = flip;
+            app.ui.view.pixel_aspect = format!("custom:{aspect}:Ruler test");
+            app.ui.view.pixel_aspect_correction = true;
+            let xf = ViewXform::active(&app).unwrap();
+            let mut h = egui_kittest::Harness::builder()
+                .with_size(vec2(400.0, 300.0))
+                .with_pixels_per_point(ppp)
+                .with_step_dt(1.0 / 60.0)
+                .build_ui_state(move |ui, app| draw_rulers(app, ui, full, &xf), app);
+            h.run_steps(2);
+            assert_eq!(h.ctx.pixels_per_point(), ppp);
+            let case = format!("aspect={aspect}, ppp={ppp}, rotation={rotation}, flip={flip}");
+            let wanted = [130.0, 66.0];
+            let target = xf.to_screen(wanted[0] as f32, wanted[1] as f32);
+            assert!(xf.rect.contains(target), "native drag target stays in the canvas: {case}");
+            drag_corner_to(&mut h, full, target, egui::Modifiers::NONE);
+            let moved = origin(&h);
+            assert!(moved.iter().zip(wanted).all(|(a, b)| (a - b).abs() < 0.01), "corner drag lands at native pixels: {case}, {moved:?}");
+            h.state_mut().run("edit.undo", json!({})).unwrap();
+            assert_eq!(origin(&h), [0.0, 0.0], "corner drag undo: {case}");
+            h.state_mut().run("edit.redo", json!({})).unwrap();
+            assert_eq!(origin(&h), moved, "corner drag redo: {case}");
+            let drop = [moved[0] + 0.6 * ticks[0], moved[1] + 0.6 * ticks[1]];
+            let target = xf.to_screen(drop[0] as f32, drop[1] as f32);
+            assert!(xf.rect.contains(target), "Shift drag target stays in the canvas: {case}");
+            drag_corner_to(&mut h, full, target, egui::Modifiers::SHIFT);
+            let snapped = origin(&h);
+            let expected = [moved[0] + ticks[0], moved[1] + ticks[1]];
+            assert!(
+                snapped.iter().zip(expected).all(|(a, b)| (a - b).abs() < 0.01),
+                "Shift uses both native tick steps from the current zero: {case}, {snapped:?}"
+            );
+            for _ in 0..40 {
+                h.step();
+            }
+            let corner = Rect::from_min_size(full.min, vec2(RULER, RULER)).center();
+            h.event(egui::Event::PointerMoved(corner));
+            h.run_steps(1);
+            for _ in 0..2 {
+                press(&mut h, corner, true, egui::Modifiers::NONE);
+                press(&mut h, corner, false, egui::Modifiers::NONE);
+            }
+            assert_eq!(origin(&h), [0.0, 0.0], "double-click resets the native zero: {case}");
+            h.state_mut().run("edit.undo", json!({})).unwrap();
+            assert_eq!(origin(&h), snapped, "reset undo: {case}");
+        }
+    }
 
     #[test]
     fn ruler_ticks_labels_and_pointer_stay_out_of_the_origin_corner() {
@@ -902,6 +1019,26 @@ mod tests {
             let (u0, u1) = ruler_range(&xf, top.left_top(), top.right_top(), 0, 1.0, [0.0; 2]);
             assert!(u0 <= u1, "flip={flip}: u0 ({u0}) must be <= u1 ({u1})");
             assert!(u1 - u0 > 0.0, "flip={flip}: range is empty");
+        }
+    }
+    #[test]
+    fn aspect_existing_guides_have_constant_screen_reach() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                a.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+                a.sync_views();
+                a.ppp = ppp;
+                a.ui.views[0].zoom = ppp;
+                a.ui.views[0].rotation = 37.0;
+                a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                finish_drag(&mut a, GuideDrag { vertical: true, index: None, pos: 50.0 });
+                finish_drag(&mut a, GuideDrag { vertical: false, index: None, pos: 100.0 });
+                assert_eq!(guide_at(&a, 50.0 + 2.0 / aspect, 10.0), Some((true, 0)), "aspect={aspect}, ppp={ppp}");
+                assert_eq!(guide_at(&a, 50.0 + 25.0 / aspect, 10.0), None, "aspect={aspect}, ppp={ppp}");
+                assert_eq!(guide_at(&a, 0.0, 102.0), Some((false, 0)));
+                assert_eq!(guide_at(&a, 0.0, 125.0), None);
+            }
         }
     }
 

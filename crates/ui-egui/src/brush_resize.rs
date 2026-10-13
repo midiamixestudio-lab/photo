@@ -144,9 +144,11 @@ pub fn draw(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform) -> boo
     let b = &app.session.tools.brush;
     let c = xf.to_screen(r.anchor[0] as f32, r.anchor[1] as f32);
     let radius = (b.size / 2.0 * xf.zoom).max(1.0);
-    tip_preview(painter, c, radius, b.hardness, preview_tint(app));
-    painter.circle_stroke(c, radius + 0.5, Stroke::new(1.0, Color32::from_black_alpha(140)));
-    painter.circle_stroke(c, radius, Stroke::new(1.0, Color32::from_white_alpha(220)));
+    tip_preview(painter, xf, c, radius, b.hardness, preview_tint(app));
+    let angle = xf.rotation.to_radians() * if xf.flip { -1.0 } else { 1.0 };
+    for (r, color) in [(radius + 0.5, Color32::from_black_alpha(140)), (radius, Color32::from_white_alpha(220))] {
+        painter.add(egui::Shape::closed_line(crate::tool_cursor::ellipse_points(c, vec2(r * xf.aspect, r), angle), Stroke::new(1.0, color)));
+    }
     // Photoshop hides the pointer while the circle stays put.
     painter.ctx().set_cursor_icon(egui::CursorIcon::None);
     let at = painter.ctx().pointer_latest_pos().unwrap_or(c);
@@ -170,9 +172,9 @@ fn preview_tint(app: &PhotocraftApp) -> Color32 {
 
 /// A round tip of `radius` screen points: solid out to `hardness` of the radius, fading to clear
 /// at the edge. One mesh (two rings and a centre), so its cost doesn't grow with the brush.
-fn tip_preview(painter: &egui::Painter, c: Pos2, radius: f32, hardness: f32, color: Color32) {
+fn tip_preview(painter: &egui::Painter, xf: &ViewXform, c: Pos2, radius: f32, hardness: f32, color: Color32) {
     let clip = painter.clip_rect();
-    if !clip.expand(radius).contains(c) {
+    if !clip.expand(radius * xf.aspect.max(1.0)).contains(c) {
         return;
     }
     // Enough segments for a smooth edge at any size, capped so huge brushes stay cheap.
@@ -183,7 +185,7 @@ fn tip_preview(painter: &egui::Painter, c: Pos2, radius: f32, hardness: f32, col
     mesh.colored_vertex(c, color);
     for k in 0..n {
         let a = k as f32 / n as f32 * std::f32::consts::TAU;
-        let d = vec2(a.cos(), a.sin());
+        let d = xf.map_vec_unscaled(vec2(a.cos(), a.sin()));
         mesh.colored_vertex(c + d * inner, color);
         mesh.colored_vertex(c + d * radius, clear);
     }
@@ -205,6 +207,41 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    #[test]
+    fn aspect_resize_hud_footprint_follows_native_tip() {
+        for ppp in [1.0, 2.0] {
+            for aspect in [0.91, 2.0] {
+                for rotation in [0.0, 90.0] {
+                    let mut app = app(Tool::Brush);
+                    pointer(&mut app, ToolEvent::Down { x: 150.0, y: 100.0, pressure: 1.0 }, CTRL_ALT, false);
+                    let xf = ViewXform {
+                        rect: egui::Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0)),
+                        zoom: 1.0 / ppp,
+                        center: [150.0, 100.0],
+                        flip: false,
+                        rotation,
+                        aspect,
+                    };
+                    let ctx = egui::Context::default();
+                    let mut out = ctx.run_ui(Default::default(), |ui| {
+                        draw(&app, ui.painter(), &xf);
+                    });
+                    out.textures_delta.clear();
+                    let bounds = out
+                        .shapes
+                        .iter()
+                        .find_map(|s| match &s.shape {
+                            egui::Shape::Mesh(m) => Some(m.calc_bounds()),
+                            _ => None,
+                        })
+                        .expect("tip preview mesh");
+                    let expected = if rotation == 0.0 { vec2(40.0 * aspect, 40.0) / ppp } else { vec2(40.0, 40.0 * aspect) / ppp };
+                    assert!((bounds.size() - expected).length() < 0.2, "{ppp} {aspect} {rotation}: {:?} expected {expected:?}", bounds.size());
+                }
+            }
+        }
+    }
+
     use crate::canvas::tool_event;
 
     const CTRL_ALT: Modifiers = Modifiers { alt: true, ctrl: true, shift: false, mac_cmd: false, command: false };

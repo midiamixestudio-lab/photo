@@ -657,6 +657,10 @@
 	300%	300%
 	Print Size	Dimensione di stampa
 	Pixel Aspect Ratio	Proporzioni pixel
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Le anteprime dei pennelli con setole non sono implementate
+	Artboard-specific guides are not implemented	Le guide specifiche delle tavole da disegno non sono implementate
+
 	Pixel Aspect Ratio Correction	Correzione proporzioni pixel
 	Custom Pixel Aspect Ratio…	Proporzioni pixel personalizzate…
 	Square	Quadrato

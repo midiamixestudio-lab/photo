@@ -108,7 +108,12 @@ pub enum Hit {
 
 /// Hit-test a frame with `tol` document px of reach (shrunk for tiny frames so they stay movable).
 pub fn hit(r: [f64; 4], p: [f64; 2], tol: f64) -> Hit {
-    let axis = |lo: f64, hi: f64, v: f64, other_in: bool| -> i8 {
+    hit_axes(r, p, [tol; 2])
+}
+
+/// Per-axis reach in the frame's own coordinates; keep its middle movable even when tiny.
+fn hit_axes(r: [f64; 4], p: [f64; 2], tol: [f64; 2]) -> Hit {
+    let axis = |lo: f64, hi: f64, v: f64, other_in: bool, tol: f64| -> i8 {
         let t = tol.min((hi - lo) / 4.0).max(0.0);
         // Outside the frame the full reach applies; inside it, the shrunk one.
         let near = |e: f64, outward: f64| (v - e) * outward <= tol && (e - v) * outward <= t;
@@ -126,9 +131,9 @@ pub fn hit(r: [f64; 4], p: [f64; 2], tol: f64) -> Hit {
             _ => 0,
         }
     };
-    let in_x = p[0] >= r[0] - tol && p[0] <= r[2] + tol;
-    let in_y = p[1] >= r[1] - tol && p[1] <= r[3] + tol;
-    let (hx, hy) = (axis(r[0], r[2], p[0], in_y), axis(r[1], r[3], p[1], in_x));
+    let in_x = p[0] >= r[0] - tol[0] && p[0] <= r[2] + tol[0];
+    let in_y = p[1] >= r[1] - tol[1] && p[1] <= r[3] + tol[1];
+    let (hx, hy) = (axis(r[0], r[2], p[0], in_y, tol[0]), axis(r[1], r[3], p[1], in_x, tol[1]));
     if hx != 0 || hy != 0 {
         Hit::Handle(hx, hy)
     } else if p[0] > r[0] && p[0] < r[2] && p[1] > r[1] && p[1] < r[3] {
@@ -546,8 +551,47 @@ pub fn press(app: &mut PhotocraftApp) -> bool {
     new
 }
 
-pub(crate) fn tolerance(app: &PhotocraftApp) -> f64 {
-    HANDLE_PX / (app.point_zoom() as f64).max(0.01)
+pub(crate) fn hit_screen(app: &PhotocraftApp, r: [f64; 4], p: [f64; 2]) -> Hit {
+    let deg = angle(app);
+    let metric = crate::canvas::ScreenMetric::active(app);
+    let reach = metric.reach(HANDLE_PX);
+    let (s, c) = deg.to_radians().sin_cos();
+    // A local edge normal n maps to D^-T n on screen, where D is the aspect/zoom
+    // scale. Its norm converts screen perpendicular distance to local-axis reach.
+    // Camera rotation and flip preserve that norm; rotating the point recovers frame axes.
+    let tol = [(c * reach[0]).hypot(s * reach[1]), (s * reach[0]).hypot(c * reach[1])];
+    let local = turn(p, center(r), -deg);
+    let hit = hit_axes(r, local, tol);
+    let Hit::Handle(hx, hy) = hit else { return hit };
+    let quad = corners(r, deg);
+    // Intersecting infinite edge strips can reach far beyond an acute projected corner.
+    // Bound outside hits by the finite boundary; sqrt(2) retains the old 8-by-8 corner reach.
+    let corner_reach = HANDLE_PX * std::f64::consts::SQRT_2;
+    let outside = local[0] < r[0] || local[0] > r[2] || local[1] < r[1] || local[1] > r[3];
+    if outside && !metric.near_quad(quad, p, corner_reach) {
+        return Hit::Outside;
+    }
+    let [a, b, c, d] = quad;
+    let (corner, x_edge, y_edge) = match (hx, hy) {
+        (-1, -1) => (a, (a, d), (a, b)),
+        (1, -1) => (b, (b, c), (a, b)),
+        (1, 1) => (c, (b, c), (c, d)),
+        (-1, 1) => (d, (a, d), (c, d)),
+        _ => return hit,
+    };
+    if metric.distance(corner, p) <= corner_reach {
+        return hit;
+    }
+    // Inside an acute corner, both strips also overlap far from its vertex: grab the
+    // nearer finite edge there rather than resizing two axes from an invisible corner handle.
+    let distance = |(a, b)| {
+        let (a, b, p) = (metric.point(a), metric.point(b), metric.point(p));
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let len = d[0] * d[0] + d[1] * d[1];
+        let t = if len > 0.0 { ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len } else { 0.0 }.clamp(0.0, 1.0);
+        (p[0] - a[0] - t * d[0]).hypot(p[1] - a[1] - t * d[1])
+    };
+    if distance(x_edge) <= distance(y_edge) { Hit::Handle(hx, 0) } else { Hit::Handle(0, hy) }
 }
 
 /// The pending frame's angle (degrees), 0 when it isn't a finite number.
@@ -558,8 +602,7 @@ pub fn angle(app: &PhotocraftApp) -> f64 {
 /// A press at document point `p` would turn the frame (Crop tool, outside the frame and its
 /// handles) rather than draw, move or resize one.
 pub fn turns_at(app: &PhotocraftApp, p: [f64; 2]) -> bool {
-    app.ui.tool == Tool::Crop
-        && app.ui.crop_rect.filter(|r| r.iter().all(|v| v.is_finite())).is_some_and(|r| hit_turned(r, angle(app), p, tolerance(app)) == Hit::Outside)
+    app.ui.tool == Tool::Crop && app.ui.crop_rect.filter(|r| r.iter().all(|v| v.is_finite())).is_some_and(|r| hit_screen(app, r, p) == Hit::Outside)
 }
 
 /// A double-click at document point `p` commits the crop (Photoshop: double-click inside the box,
@@ -567,7 +610,7 @@ pub fn turns_at(app: &PhotocraftApp, p: [f64; 2]) -> bool {
 pub fn commits_at(app: &PhotocraftApp, p: [f64; 2]) -> bool {
     app.ui.tool == Tool::Crop
         && app.crop.drag.is_none()
-        && app.ui.crop_rect.filter(|r| r.iter().all(|v| v.is_finite())).is_some_and(|r| hit_turned(r, angle(app), p, tolerance(app)) == Hit::Inside)
+        && app.ui.crop_rect.filter(|r| r.iter().all(|v| v.is_finite())).is_some_and(|r| hit_screen(app, r, p) == Hit::Inside)
 }
 
 /// The frame is being turned: the angle for the readout beside the pointer. Classic Mode shows
@@ -723,7 +766,7 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: Modifiers) -> bool 
             let frame = app.ui.crop_rect.filter(|r| r.iter().all(|v| v.is_finite()));
             let deg = angle(app);
             let image = crate::crop_mode::moves_image(app);
-            app.crop.drag = Some(match frame.map(|r| (r, hit_turned(r, deg, p, tolerance(app)))) {
+            app.crop.drag = Some(match frame.map(|r| (r, hit_screen(app, r, p))) {
                 Some((rect, Hit::Handle(hx, hy))) => {
                     let view = if crate::crop_mode::live_center(app) { crate::crop_mode::press_view(app) } else { None };
                     CropDrag::Resize { hx, hy, start: p, rect, view }
@@ -878,11 +921,11 @@ pub fn cursor(app: &PhotocraftApp, p: [f64; 2]) -> Option<CursorIcon> {
         Some(CropDrag::Resize { hx, hy, .. }) => Hit::Handle(hx, hy),
         Some(CropDrag::Draw { .. }) => return Some(CursorIcon::Crosshair),
         Some(CropDrag::Rotate { .. } | CropDrag::TurnImage { .. }) => Hit::Outside,
-        None => hit_turned(app.ui.crop_rect?, deg, p, tolerance(app)),
+        None => hit_screen(app, app.ui.crop_rect?, p),
     };
     Some(match h {
         // The arrow as the handle faces on screen: the frame's turn plus the view's.
-        Hit::Handle(hx, hy) => resize_icon(hx, hy, deg + f64::from(crate::crop_mode::view_rotation(app))),
+        Hit::Handle(hx, hy) => resize_icon(hx, hy, deg, crate::canvas::ViewXform::active(app)),
         // Inside the untouched default frame a drag draws a new one (`pointer`), so nothing moves (#4461).
         Hit::Inside if app.crop.default_frame => CursorIcon::Crosshair,
         Hit::Inside => CursorIcon::Move,
@@ -903,7 +946,7 @@ pub fn turn_cursor_dir(app: &PhotocraftApp, p: [f64; 2]) -> Option<[f64; 2]> {
     let turning = match app.crop.drag {
         Some(CropDrag::Rotate { .. } | CropDrag::TurnImage { .. }) => true,
         Some(_) => false,
-        None => hit_turned(r, deg, p, tolerance(app)) == Hit::Outside,
+        None => hit_screen(app, r, p) == Hit::Outside,
     };
     if !(turning && p[0].is_finite() && p[1].is_finite()) {
         return None;
@@ -948,8 +991,12 @@ pub fn draw_turn_cursor(ctx: &egui::Context, p: egui::Pos2, toward: egui::Vec2) 
 
 /// The resize arrow for handle (`hx`, `hy`) of a frame turned `deg` degrees: the handle's outward
 /// direction, turned with the frame, to the nearest of the four arrows.
-fn resize_icon(hx: i8, hy: i8, deg: f64) -> CursorIcon {
-    let d = turn([f64::from(hx), f64::from(hy)], [0.0, 0.0], deg);
+fn resize_icon(hx: i8, hy: i8, deg: f64, xf: Option<crate::canvas::ViewXform>) -> CursorIcon {
+    let mut d = turn([f64::from(hx), f64::from(hy)], [0.0, 0.0], deg);
+    if let Some(xf) = xf {
+        let screen = xf.map_vec_unscaled(egui::vec2(d[0] as f32, d[1] as f32));
+        d = [f64::from(screen.x), f64::from(screen.y)];
+    }
     let a = d[1].atan2(d[0]).rem_euclid(std::f64::consts::PI);
     match ((a / std::f64::consts::FRAC_PI_4).round() as i64).rem_euclid(4) {
         0 => CursorIcon::ResizeHorizontal,
@@ -962,6 +1009,33 @@ fn resize_icon(hx: i8, hy: i8, deg: f64) -> CursorIcon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aspect_review_crop_gesture_picks_screen_handle() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for rotation in [0.0, 37.0] {
+                    let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                    a.run("file.new", serde_json::json!({"width":1000,"height":500})).unwrap();
+                    a.ui.tool = crate::state::Tool::Crop;
+                    a.ui.crop_rect = Some([100.0, 100.0, 900.0, 400.0]);
+                    a.ui.view.pixel_aspect = format!("custom:{aspect}");
+                    a.ui.view.pixel_aspect_correction = true;
+                    a.ui.views[0].zoom = ppp;
+                    a.ppp = ppp;
+                    a.ui.views[0].rotation = rotation;
+                    let xf = crate::canvas::ViewXform::active(&a).unwrap();
+                    let at = xf.to_screen(100.0, 100.0);
+                    let p = xf.to_doc(at + egui::vec2(-2.0, -2.0));
+                    pointer(&mut a, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, egui::Modifiers::NONE);
+                    assert!(matches!(a.crop.drag, Some(CropDrag::Resize { hx: -1, hy: -1, .. })), "{aspect} {rotation}: {:?}", a.crop.drag);
+                    let p = xf.to_doc(at + egui::vec2(-30.0, -30.0));
+                    pointer(&mut a, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, egui::Modifiers::NONE);
+                    assert!(!matches!(a.crop.drag, Some(CropDrag::Resize { hx: -1, hy: -1, .. })));
+                }
+            }
+        }
+    }
+
     use crate::canvas::tool_event;
     use photocraft_doc::{Color, ColorMode, Document, SampleType, Size};
     use serde_json::json;
@@ -1203,10 +1277,10 @@ mod tests {
         let b = turned_bounds(r, 90.0);
         assert!((b[0] - 50.0).abs() < 1e-9 && (b[3] - 80.0).abs() < 1e-9, "{b:?}");
         // Handle arrows turn with the frame.
-        assert_eq!(resize_icon(1, 0, 0.0), CursorIcon::ResizeHorizontal);
-        assert_eq!(resize_icon(1, 0, 90.0), CursorIcon::ResizeVertical);
-        assert_eq!(resize_icon(1, 0, 45.0), CursorIcon::ResizeNwSe);
-        assert_eq!(resize_icon(-1, -1, 90.0), CursorIcon::ResizeNeSw);
+        assert_eq!(resize_icon(1, 0, 0.0, None), CursorIcon::ResizeHorizontal);
+        assert_eq!(resize_icon(1, 0, 90.0, None), CursorIcon::ResizeVertical);
+        assert_eq!(resize_icon(1, 0, 45.0, None), CursorIcon::ResizeNwSe);
+        assert_eq!(resize_icon(-1, -1, 90.0, None), CursorIcon::ResizeNeSw);
         assert_eq!(normalized_angle(540.0), 180.0);
         assert_eq!(normalized_angle(-190.0), 170.0);
         assert_eq!(normalized_angle(f64::NAN), 0.0);

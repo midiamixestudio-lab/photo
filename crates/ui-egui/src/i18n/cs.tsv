@@ -666,6 +666,10 @@
 	300%	300 %
 	Print Size	Velikost tisku
 	Pixel Aspect Ratio	Poměr stran pixelu
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Náhledy štětinových štětců nejsou implementovány
+	Artboard-specific guides are not implemented	Vodítka jednotlivých kreslicích pláten nejsou implementována
+
 	Pixel Aspect Ratio Correction	Korekce poměru stran pixelu
 	Custom Pixel Aspect Ratio…	Vlastní poměr stran pixelu…
 	Square	Čtvercový

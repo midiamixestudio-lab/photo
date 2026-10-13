@@ -829,8 +829,50 @@ pub enum ToolEvent {
 /// View › Show › Layer Edges: the colour of the active layer's outline.
 pub(crate) const LAYER_EDGES: Color32 = Color32::from_rgb(0x2d, 0x8c, 0xeb);
 
-/// Document ↔ screen mapping for a canvas rect and a view.
+/// Logical-screen lengths along the document axes. Rotation and reflection are isometries,
+/// so this metric supports picking and per-axis snapping without changing native edit coordinates.
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct ScreenMetric(pub [f64; 2]);
+
+impl ScreenMetric {
+    pub fn active(app: &PhotocraftApp) -> Self {
+        ViewXform::active(app).map_or(Self([1.0; 2]), |xf| xf.metric())
+    }
+    pub fn point(self, p: [f64; 2]) -> [f64; 2] {
+        [p[0] * self.0[0], p[1] * self.0[1]]
+    }
+    pub fn distance(self, a: [f64; 2], b: [f64; 2]) -> f64 {
+        ((a[0] - b[0]) * self.0[0]).hypot((a[1] - b[1]) * self.0[1])
+    }
+    pub fn reach(self, points: f64) -> [f64; 2] {
+        [points / self.0[0], points / self.0[1]]
+    }
+    /// Inside a mapped quad or within a logical-point radius of its boundary.
+    pub fn near_quad(self, quad: [[f64; 2]; 4], p: [f64; 2], reach: f64) -> bool {
+        let q = quad.map(|p| self.point(p));
+        let p = self.point(p);
+        let mut inside = false;
+        for i in 0..4 {
+            let (a, b) = (q[i], q[(i + 1) % 4]);
+            if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0] {
+                inside = !inside;
+            }
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let len = d[0] * d[0] + d[1] * d[1];
+            let t = if len > 0.0 { ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len } else { 0.0 }.clamp(0.0, 1.0);
+            if (p[0] - a[0] - t * d[0]).hypot(p[1] - a[1] - t * d[1]) <= reach {
+                return true;
+            }
+        }
+        inside
+    }
+    pub fn affine(self) -> photocraft_geom::Affine {
+        photocraft_geom::Affine { m: [self.0[0], 0.0, 0.0, self.0[1], 0.0, 0.0] }
+    }
+}
+
+/// Document ↔ screen mapping for a canvas rect and a view.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewXform {
     pub rect: Rect,
     pub zoom: f32,
@@ -858,6 +900,18 @@ impl ViewXform {
             rotation: v.rotation,
             aspect: app.ui.view.display_aspect(),
         })
+    }
+
+    pub(crate) fn metric(self) -> ScreenMetric {
+        ScreenMetric([f64::from(self.zoom_x()), f64::from(self.zoom)])
+    }
+
+    /// Map a document vector without zoom, applying aspect before rotation and reflection.
+    pub fn map_vec_unscaled(self, d: Vec2) -> Vec2 {
+        let (c, s) = self.sincos();
+        let x = d.x * self.sx();
+        let r = vec2(x * c - d.y * s, x * s + d.y * c);
+        if self.flip { vec2(-r.x, r.y) } else { r }
     }
 
     fn sincos(self) -> (f32, f32) {
@@ -910,6 +964,15 @@ impl ViewXform {
         let u = self.unmap_vec(d);
         [(u.x + self.center[0]) as f64, (u.y + self.center[1]) as f64]
     }
+    pub(crate) fn circle_outline(&self, painter: &egui::Painter, at: Pos2, radius: f32) {
+        let radii = vec2(radius * self.zoom * self.aspect, radius * self.zoom);
+        let angle = self.rotation.to_radians() * if self.flip { -1.0 } else { 1.0 };
+        for (extra, color) in [(0.5, Color32::from_black_alpha(140)), (0.0, Color32::from_white_alpha(220))] {
+            let points = crate::tool_cursor::ellipse_points(at, radii + Vec2::splat(extra), angle);
+            painter.add(egui::Shape::closed_line(points, Stroke::new(1.0, color)));
+        }
+    }
+
     /// On-screen bounds of the image, including camera rotation and pixel aspect correction.
     pub fn image_bounds(self, size: [u32; 2]) -> Rect {
         let (c, s) = self.sincos();
@@ -2913,6 +2976,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                 doc: key,
                 doc_size: preview_size,
                 zoom: view.zoom * k as f32 / ppp,
+                aspect: xf.aspect,
                 // A size-changing preview grows around the old image center; keep the view's pan.
                 center: [
                     view.center[0] / k as f32 + (preview_size[0] as f32 - original_size[0] as f32) / 2.0,
@@ -2939,6 +3003,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                 doc: doc.id.0,
                 doc_size: [doc.size.width, doc.size.height],
                 zoom: point_zoom,
+                aspect: xf.aspect,
                 center: view.center,
                 rotation: if view.rotation.is_finite() { view.rotation.to_radians() } else { 0.0 },
                 shadow: {
@@ -3018,7 +3083,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         }
 
         // Pixel grid at high zoom, over pixels with content only (the GPU path draws its own).
-        if !on_gpu && pixel_grid && crate::pixel_grid::shows_at(view.zoom) {
+        if !on_gpu && pixel_grid && crate::pixel_grid::shows_for_view(view.zoom, xf.aspect) {
             crate::pixel_grid::paint(app, &painter, &xf, idx, output, visible_doc_rect(&xf));
         }
 
@@ -3827,7 +3892,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                             _ => {
                                 let centre = brush_tip_centre(tool, alt || app.ui.shell.sticky_alt, cur.show_crosshair_in_brush_tip);
                                 let axes = crate::brush_cursor::tip_axes(&xf, brush.size);
-                                crate::brush_cursor::cursor(&painter, p, brush, full, axes, cur.painting == PaintingCursor::NormalTip, centre)
+                                crate::brush_cursor::cursor(&painter, p, brush, full, (&xf, axes), cur.painting == PaintingCursor::NormalTip, centre)
                             }
                         }
                     }
@@ -3889,13 +3954,11 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                 Tool::RotateView => crate::rotate_view::cursor(response.dragged()),
                 Tool::Zoom => crate::tool_cursor::zoom(ui.ctx(), zoom_out(alt)),
                 Tool::Type | Tool::VerticalType | Tool::HorizontalTypeMask | Tool::VerticalTypeMask => egui::CursorIcon::Text,
-                Tool::MagneticLasso => crate::magnetic_lasso_ui::cursor(app, &painter, p, xf.zoom),
+                Tool::MagneticLasso => crate::magnetic_lasso_ui::cursor(app, &painter, p, &xf),
                 Tool::RedEye => {
                     let pupil = app.ui.tool_options.red_eye_pupil_size.clamp(1.0, 100.0);
                     let r_doc = photocraft_algo::redeye::search_radius(pupil);
-                    let r = (r_doc * xf.zoom).max(2.0);
-                    painter.circle_stroke(p, r + 0.5, Stroke::new(1.0, Color32::from_black_alpha(140)));
-                    painter.circle_stroke(p, r, Stroke::new(1.0, Color32::from_white_alpha(220)));
+                    xf.circle_outline(&painter, p, r_doc);
                     for (w, c) in [(2.5, Color32::from_black_alpha(140)), (1.0, Color32::from_white_alpha(220))] {
                         painter.line_segment([p - vec2(3.0, 0.0), p + vec2(3.0, 0.0)], Stroke::new(w, c));
                         painter.line_segment([p - vec2(0.0, 3.0), p + vec2(0.0, 3.0)], Stroke::new(w, c));
@@ -5062,6 +5125,10 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
     }
     match ev {
         ToolEvent::Down { x, y, pressure } => {
+            let hit_point = match raw {
+                ToolEvent::Down { x, y, .. } => [x, y],
+                _ => [x, y],
+            };
             // Painting a type, shape, Smart Object or fill layer asks to rasterize it first
             // (⌥-click with the Clone Stamp or Healing Brush only sets the source).
             let sets_source = matches!(tool, Tool::CloneStamp | Tool::Healing) && mods.alt;
@@ -5126,12 +5193,12 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                 }
                 Tool::Pen => {
                     if !(mods.alt && crate::vector_ui::pen_grab_handle(app, x, y)) {
-                        crate::vector_ui::pen_down(app, x, y);
+                        crate::vector_ui::pen_down_with_hit(app, hit_point, [x, y]);
                     }
                     return;
                 }
                 Tool::CurvaturePen => {
-                    crate::vector_ui::curvature_down(app, x, y);
+                    crate::vector_ui::curvature_down_with_hit(app, hit_point, [x, y]);
                     return;
                 }
                 Tool::CloneStamp | Tool::Healing if mods.alt => {
@@ -5643,11 +5710,7 @@ pub(crate) fn constrained_polygon_point(from: [f64; 2], point: [f64; 2]) -> [f64
 /// first click fixes the selection mode; a new-selection polygon hides the old outline while it is
 /// drawn, and replaces it in one history step when it closes.
 fn polygon_click(app: &mut PhotocraftApp, x: f64, y: f64, mods: egui::Modifiers) {
-    let close = app
-        .ui
-        .polygon
-        .first()
-        .is_some_and(|p0| app.ui.polygon.len() >= 3 && ((p0[0] - x).powi(2) + (p0[1] - y).powi(2)).sqrt() < 8.0 / app.point_zoom().max(0.01) as f64);
+    let close = app.ui.polygon.first().is_some_and(|p0| app.ui.polygon.len() >= 3 && ScreenMetric::active(app).distance(*p0, [x, y]) < 8.0);
     if close {
         commit_polygon(app);
         return;
@@ -7995,6 +8058,10 @@ mod rotation_preview_isolation_tests {
         assert!(ensure_filter_preview(&mut app, 0, &egui::Context::default()).is_none(), "an inactive tab must never inherit the command preview");
     }
 }
+
+#[cfg(test)]
+#[path = "canvas/aspect_tests.rs"]
+mod aspect_tests;
 
 #[cfg(test)]
 #[path = "canvas_display_memo_tests.rs"]

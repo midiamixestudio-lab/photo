@@ -155,21 +155,12 @@ fn shape_preview(app: &PhotocraftApp, tool: Tool, start: [f64; 2], end: [f64; 2]
 
 /// Shape-tool drag preview using the same path and vector stroke geometry as the commit.
 pub fn draw_shape_preview(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform, tool: Tool, start: [f64; 2], end: [f64; 2], mods: egui::Modifiers) {
-    let Some(mut shape) = shape_preview(app, tool, start, end, mods) else { return };
-    let path = shape.path.clone();
-    let origin = xf.to_screen(0.0, 0.0);
-    let x = xf.to_screen(1.0, 0.0) - origin;
-    let y = xf.to_screen(0.0, 1.0) - origin;
-    let transform = Affine { m: [x.x as f64, x.y as f64, y.x as f64, y.y as f64, origin.x as f64, origin.y as f64] };
-    shape.path = shape.path.transform(&transform);
-    if let Some(stroke) = &mut shape.stroke {
-        stroke.width *= xf.zoom;
-    }
-    // This lightweight screen overlay retains the existing display-colour behaviour; document
-    // rendering still goes through its format/profile path when the shape is committed.
-    crate::shape_stroke_ui::paint_shape_preview(painter, &shape);
+    let Some(shape) = shape_preview(app, tool, start, end, mods) else { return };
+    let path = &shape.path;
+    // Stroke in native coordinates before the non-uniform camera transform.
+    crate::shape_stroke_ui::paint_shape_preview(painter, &shape, xf);
     let accent = Tokens::get(painter.ctx()).accent;
-    for (pts, _) in path_lines(&path, &|q| xf.to_screen(q[0] as f32, q[1] as f32)) {
+    for (pts, _) in path_lines(path, &|q| xf.to_screen(q[0] as f32, q[1] as f32)) {
         // The accent path over a dark halo: visible on any pixels (#172).
         painter.extend(crate::tool_feedback::contrast_path(pts, true, accent));
     }
@@ -188,9 +179,9 @@ fn pen_to_json(pen: &PenPath, closed: bool) -> Value {
 }
 
 /// Is `(x, y)` on the first anchor of a Pen path that a click there would close (two anchors or
-/// more)? `tol` is the anchors' hit radius in document pixels.
-fn on_closing_anchor(pen: &PenPath, x: f64, y: f64, tol: f64) -> bool {
-    pen.knots.len() >= 2 && pen.knots.first().is_some_and(|k| (k[0][0] - x).hypot(k[0][1] - y) < tol)
+/// more)? Its hit radius is six logical screen points under the current view transform.
+fn on_closing_anchor(pen: &PenPath, x: f64, y: f64, metric: crate::canvas::ScreenMetric) -> bool {
+    pen.knots.len() >= 2 && pen.knots.first().is_some_and(|k| metric.distance(k[0], [x, y]) < 6.0)
 }
 
 /// Would a click at `(x, y)` with `tool` close the path being drawn: the Pen over the first
@@ -199,7 +190,7 @@ fn on_closing_anchor(pen: &PenPath, x: f64, y: f64, tol: f64) -> bool {
 pub fn closes_path_at(app: &PhotocraftApp, tool: Tool, x: f64, y: f64) -> bool {
     let Some(pen) = app.ui.pen.as_ref().filter(|p| !p.dragging && p.moving.is_none()) else { return false };
     match tool {
-        Tool::Pen => !pen.curvature && on_closing_anchor(pen, x, y, 6.0 / app.point_zoom().max(0.01) as f64),
+        Tool::Pen => !pen.curvature && on_closing_anchor(pen, x, y, crate::canvas::ScreenMetric::active(app)),
         Tool::CurvaturePen => pen.curvature && pen.knots.len() >= 3 && curvature_hit(app, x, y) == Some(0),
         _ => false,
     }
@@ -208,10 +199,15 @@ pub fn closes_path_at(app: &PhotocraftApp, tool: Tool, x: f64, y: f64) -> bool {
 /// Pen press: close on the first anchor, reshape the last anchor's outgoing handle,
 /// or add a new anchor (dragging a new anchor pulls symmetrical handles).
 pub fn pen_down(app: &mut PhotocraftApp, x: f64, y: f64) {
-    let tol = 6.0 / app.point_zoom().max(0.01) as f64;
+    pen_down_with_hit(app, [x, y], [x, y]);
+}
+
+/// Pick existing anchors at the raw pointer, while new anchors keep snapped placement.
+pub(crate) fn pen_down_with_hit(app: &mut PhotocraftApp, hit: [f64; 2], [x, y]: [f64; 2]) {
+    let metric = crate::canvas::ScreenMetric::active(app);
     let pen = app.ui.pen.get_or_insert_with(PenPath::default);
     if let Some(first) = pen.knots.first().map(|k| k[0])
-        && on_closing_anchor(pen, x, y, tol)
+        && on_closing_anchor(pen, hit[0], hit[1], metric)
     {
         // Pressing the first anchor closes the path on release. Until then a stand-in for it
         // takes the drag, which pulls out that anchor's handles (close-drag, #3306).
@@ -224,7 +220,7 @@ pub fn pen_down(app: &mut PhotocraftApp, x: f64, y: f64) {
     // curve. Dragging from that anchor then sets the outgoing handle independently (#1482).
     // This must precede adding a point, or a re-click creates a zero-length segment.
     if let Some((i, last)) = pen.knots.len().checked_sub(1).zip(pen.knots.last_mut())
-        && (last[0][0] - x).hypot(last[0][1] - y) < tol
+        && metric.distance(last[0], hit) < 6.0
     {
         last[2] = last[0];
         if !pen.unlinked.contains(&i) {
@@ -283,14 +279,14 @@ pub fn pen_undo_last_point(app: &mut PhotocraftApp) -> bool {
 }
 
 pub fn pen_up(app: &mut PhotocraftApp) {
-    let jitter = 2.0 / f64::from(app.point_zoom().max(0.01));
+    let metric = crate::canvas::ScreenMetric::active(app);
     let Some(pen) = app.ui.pen.as_mut() else { return };
     pen.dragging = false;
     pen.adjusting_last = false;
     if closing(pen) {
         // A click on the first anchor closes the path and leaves that anchor's handles alone.
         if let Some(k) = pen.knots.last_mut()
-            && (k[2][0] - k[0][0]).hypot(k[2][1] - k[0][1]) < jitter
+            && metric.distance(k[2], k[0]) < 2.0
         {
             k[1] = k[0];
             k[2] = k[0];
@@ -313,11 +309,11 @@ pub fn pen_break_handle(app: &mut PhotocraftApp) {
 /// ⌥/Alt-press on the last anchor's outgoing handle while drawing grabs that handle alone: the
 /// drag turns it and the incoming curve stays put (#3306). False when the press misses it.
 pub fn pen_grab_handle(app: &mut PhotocraftApp, x: f64, y: f64) -> bool {
-    let tol = 6.0 / f64::from(app.point_zoom().max(0.01));
+    let metric = crate::canvas::ScreenMetric::active(app);
     let Some(pen) = app.ui.pen.as_mut() else { return false };
     let Some((i, k)) = pen.knots.len().checked_sub(1).zip(pen.knots.last()) else { return false };
-    let dist = |p: [f64; 2]| (p[0] - x).hypot(p[1] - y);
-    if k[2] == k[0] || dist(k[2]) >= tol || dist(k[2]) >= dist(k[0]) {
+    let dist = |p: [f64; 2]| metric.distance(p, [x, y]);
+    if k[2] == k[0] || dist(k[2]) >= 6.0 || dist(k[2]) >= dist(k[0]) {
         return false;
     }
     if !pen.unlinked.contains(&i) {
@@ -467,9 +463,9 @@ fn path_exists(doc: &Document, name: &str) -> bool {
 pub fn freeform_finish(app: &mut PhotocraftApp, points: &[[f64; 3]], straight: &[usize]) {
     let trace: Vec<[f64; 2]> = points.iter().map(|p| [p[0], p[1]]).collect();
     let (Some(first), Some(last)) = (trace.first(), trace.last()) else { return };
-    let tol = 6.0 / app.point_zoom().max(0.01) as f64;
-    let length: f64 = trace.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1])).sum();
-    let closed = (first[0] - last[0]).hypot(first[1] - last[1]) < tol && length > 4.0 * tol;
+    let metric = crate::canvas::ScreenMetric::active(app);
+    let length: f64 = trace.windows(2).map(|w| metric.distance(w[0], w[1])).sum();
+    let closed = metric.distance(*first, *last) < 6.0 && length > 24.0;
     let fit = f64::from(app.ui.tool_options.curve_fit);
     let pen = if straight.is_empty() {
         let Some(sub) = photocraft_vector::trace::fit_trace(&trace, fit, closed) else { return };
@@ -477,7 +473,7 @@ pub fn freeform_finish(app: &mut PhotocraftApp, points: &[[f64; 3]], straight: &
         let unlinked = sub.knots.iter().enumerate().filter(|(_, k)| !k.smooth).map(|(i, _)| i).collect();
         (PenPath { knots, unlinked, ..Default::default() }, sub.closed)
     } else {
-        fit_with_straight_segments(&trace, straight, fit, closed.then_some(tol))
+        fit_with_straight_segments(&trace, straight, fit, closed.then_some(metric))
     };
     commit_path(app, &pen.0, pen.1);
 }
@@ -488,8 +484,8 @@ fn knot_points(k: &photocraft_doc::Knot) -> [[f64; 2]; 3] {
 
 /// A Freeform Pen trace with ⌥-clicked straight segments (into the points at `straight`): each
 /// freehand run between them is fitted on its own, and the runs are joined by straight lines
-/// between corner anchors. `close` (a reach) closes the path when it ends on its start point.
-fn fit_with_straight_segments(trace: &[[f64; 2]], straight: &[usize], fit: f64, close: Option<f64>) -> (PenPath, bool) {
+/// between corner anchors. `close` (a screen metric) closes the path when it ends on its start point.
+fn fit_with_straight_segments(trace: &[[f64; 2]], straight: &[usize], fit: f64, close: Option<crate::canvas::ScreenMetric>) -> (PenPath, bool) {
     let mut cuts: Vec<usize> = straight.iter().copied().filter(|&i| i > 0 && i < trace.len()).collect();
     cuts.sort_unstable();
     cuts.dedup();
@@ -521,11 +517,11 @@ fn fit_with_straight_segments(trace: &[[f64; 2]], straight: &[usize], fit: f64, 
         start = end;
     }
     // Ended on the start point: the last anchor is the first one.
-    let ends_on_start = |k: &[[[f64; 2]; 3]], reach: f64| match (k.first(), k.last()) {
-        (Some(a), Some(b)) => k.len() > 3 && (a[0][0] - b[0][0]).hypot(a[0][1] - b[0][1]) < reach,
+    let ends_on_start = |k: &[[[f64; 2]; 3]], metric: crate::canvas::ScreenMetric| match (k.first(), k.last()) {
+        (Some(a), Some(b)) => k.len() > 3 && metric.distance(a[0], b[0]) < 6.0,
         _ => false,
     };
-    let closed = close.is_some_and(|reach| ends_on_start(&knots, reach));
+    let closed = close.is_some_and(|metric| ends_on_start(&knots, metric));
     if closed && let Some(last) = knots.pop() {
         if let Some(k) = knots.first_mut() {
             k[1] = [last[1][0] - last[0][0] + k[0][0], last[1][1] - last[0][1] + k[0][1]];
@@ -547,24 +543,23 @@ fn curvature_refresh(pen: &mut PenPath, closed: bool) {
 
 /// The Curvature Pen's anchor within a few screen pixels of (x, y).
 fn curvature_hit(app: &PhotocraftApp, x: f64, y: f64) -> Option<usize> {
-    let tol = 6.0 / app.point_zoom().max(0.01) as f64;
+    let metric = crate::canvas::ScreenMetric::active(app);
     let pen = app.ui.pen.as_ref().filter(|p| p.curvature)?;
-    pen.knots
-        .iter()
-        .enumerate()
-        .map(|(i, k)| (i, (k[0][0] - x).hypot(k[0][1] - y)))
-        .filter(|(_, d)| *d < tol)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _)| i)
+    pen.knots.iter().enumerate().map(|(i, k)| (i, metric.distance(k[0], [x, y]))).filter(|(_, d)| *d < 6.0).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(i, _)| i)
 }
 
 /// Curvature Pen press: clicking the first anchor closes the path, pressing another anchor
 /// grabs it to move, anywhere else adds a smooth anchor (still draggable until the release).
 pub fn curvature_down(app: &mut PhotocraftApp, x: f64, y: f64) {
+    curvature_down_with_hit(app, [x, y], [x, y]);
+}
+
+/// Share the raw anchor hit with the pointer cue; only newly placed geometry is snapped.
+pub(crate) fn curvature_down_with_hit(app: &mut PhotocraftApp, hit: [f64; 2], [x, y]: [f64; 2]) {
     if app.ui.pen.as_ref().is_some_and(|p| !p.curvature) {
         pen_commit(app, false);
     }
-    let hit = curvature_hit(app, x, y);
+    let hit = curvature_hit(app, hit[0], hit[1]);
     if hit == Some(0) && app.ui.pen.as_ref().is_some_and(|p| p.knots.len() >= 3) {
         pen_commit(app, true);
         return;
@@ -2360,6 +2355,203 @@ mod tests {
         assert!(!legacy.dragging && !legacy.adjusting_last);
     }
 
+    /// The close-path pointer and the actual canvas tool route share a six-point radius,
+    /// including corrected wide/narrow pixels, rotation and the unchanged square view.
+    #[test]
+    fn close_path_pointer_and_press_share_pixel_aspect_screen_radius() {
+        for tool in [Tool::Pen, Tool::CurvaturePen] {
+            for (preset, correction, rotation) in [
+                ("anamorphic2To1", true, 0.0),
+                ("anamorphic2To1", true, 90.0),
+                ("custom:0.5:Half", true, 0.0),
+                ("custom:0.5:Half", true, 90.0),
+                ("square", true, 0.0),
+                ("anamorphic2To1", false, 90.0),
+            ] {
+                for zoom in [0.5, 1.0, 2.0] {
+                    for direction in [egui::vec2(1.0, 0.0), egui::vec2(0.0, 1.0)] {
+                        for (distance, closes) in [(5.0, true), (7.0, false)] {
+                            let mut app = app();
+                            app.ui.tool = tool;
+                            app.ui.tool_options.vector_mode = "path".into();
+                            app.ui.extras.rulers = false;
+                            app.ui.view.pixel_aspect = preset.into();
+                            app.ui.view.pixel_aspect_correction = correction;
+                            app.ui.views[0].zoom = zoom;
+                            app.ui.views[0].rotation = rotation;
+                            app.ui.views[0].fit_pending = false;
+                            app.last_canvas_rect = egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(640.0, 480.0));
+                            let press = |app: &mut PhotocraftApp, [x, y]: [f64; 2]| {
+                                let before_pen = app.ui.pen.clone();
+                                crate::canvas::tool_event(app, crate::canvas::ToolEvent::Down { x, y, pressure: 1.0 }, egui::Modifiers::NONE);
+                                let down_pen = app.ui.pen.clone();
+                                crate::canvas::tool_event(app, crate::canvas::ToolEvent::Up { x, y }, egui::Modifiers::NONE);
+                                (before_pen, down_pen, app.ui.pen.clone())
+                            };
+                            let anchors = [[20.0, 20.0], [120.0, 20.0], [120.0, 120.0]];
+                            let count = if tool == Tool::Pen { 2 } else { 3 };
+                            for at in anchors[..count].iter().copied() {
+                                press(&mut app, at);
+                            }
+                            let xf = crate::canvas::ViewXform::active(&app).unwrap();
+                            let [x, y] = xf.to_doc(xf.to_screen(anchors[0][0] as f32, anchors[0][1] as f32) + direction * distance);
+                            let case = format!(
+                                "[DEBUG-close-v3] {tool:?}, {preset}, correction={correction}, rotation={rotation}, zoom={zoom}, direction={direction:?}, distance={distance}, rawxy=[{x:?}, {y:?}], snap={}, pixel_grid={}, active_tool={:?}",
+                                app.ui.extras.snap,
+                                app.session.prefs().tools.snap_vector_tools_and_transforms_to_pixel_grid,
+                                app.active_tool()
+                            );
+                            assert_eq!(closes_path_at(&app, tool, x, y), closes, "{case}, before_pen={:?}", app.ui.pen);
+                            let (before_pen, down_pen, up_pen) = press(&mut app, [x, y]);
+                            assert_eq!(
+                                app.ui.pen.is_none(),
+                                closes,
+                                "the actual press/release must agree with its close pointer: {case}, before_pen={before_pen:?}, down_pen={down_pen:?}, up_pen={up_pen:?}"
+                            );
+                            let path = app.session.active().unwrap().doc.work_path.as_ref();
+                            assert_eq!(
+                                path.is_some_and(|p| p.subpaths.len() == 1 && p.subpaths[0].closed),
+                                closes,
+                                "a hit commits one closed work path; a miss keeps drawing: {case}, before_pen={before_pen:?}, down_pen={down_pen:?}, up_pen={up_pen:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn canvas_anchor_hits_use_raw_positions_when_pixel_rounding_crosses_the_radius() {
+        use crate::canvas::{ToolEvent, tool_event};
+        for tool in [Tool::Pen, Tool::CurvaturePen] {
+            for first in [true, false] {
+                for (distance, hits) in [(5.0, true), (7.0, false)] {
+                    let mut app = app();
+                    app.ui.tool = tool;
+                    app.ui.tool_options.vector_mode = "path".into();
+                    app.ui.extras.rulers = false;
+                    app.ui.view.pixel_aspect = "anamorphic2To1".into();
+                    app.ui.view.pixel_aspect_correction = true;
+                    app.ui.views[0].zoom = 2.5;
+                    app.ui.views[0].fit_pending = false;
+                    app.last_canvas_rect = Rect::from_min_size(pos2(20.0, 30.0), vec2(640.0, 480.0));
+                    assert!(app.ui.extras.snap && app.session.prefs().tools.snap_vector_tools_and_transforms_to_pixel_grid);
+                    let anchors = [[20.0, 20.0], [120.0, 20.0], [120.0, 120.0]];
+                    let count = if tool == Tool::Pen { 2 } else { 3 };
+                    for [x, y] in anchors[..count].iter().copied() {
+                        tool_event(&mut app, ToolEvent::Down { x, y, pressure: 1.0 }, egui::Modifiers::NONE);
+                        tool_event(&mut app, ToolEvent::Up { x, y }, egui::Modifiers::NONE);
+                    }
+                    let index = if first { 0 } else { count - 1 };
+                    let [ax, ay] = anchors[index];
+                    let x = ax + distance / 5.0;
+                    let metric = crate::canvas::ScreenMetric::active(&app);
+                    assert!((metric.distance([ax, ay], [x, ay]) - distance).abs() < 1e-10);
+                    // Both raw positions round to one native pixel from the anchor: five
+                    // screen points. The seven-point miss must still add a snapped anchor.
+                    assert!((metric.distance([ax, ay], [ax + 1.0, ay]) - 5.0).abs() < 1e-10);
+                    assert_eq!(closes_path_at(&app, tool, x, ay), first && hits);
+                    let history = app.session.active().unwrap().history.past_len();
+                    tool_event(&mut app, ToolEvent::Down { x, y: ay, pressure: 1.0 }, egui::Modifiers::NONE);
+                    if !first && hits {
+                        let pen = app.ui.pen.as_ref().unwrap();
+                        assert_eq!(pen.knots.len(), count);
+                        assert_eq!(pen.knots[index][0], [ax, ay]);
+                        if tool == Tool::Pen {
+                            assert!(pen.adjusting_last, "the raw last-anchor hit reshapes its handle");
+                        } else {
+                            assert_eq!(pen.moving, Some(index), "the raw nearest-anchor hit grabs it");
+                        }
+                    }
+                    tool_event(&mut app, ToolEvent::Up { x, y: ay }, egui::Modifiers::NONE);
+                    if first && hits {
+                        assert!(app.ui.pen.is_none(), "{tool:?}: the raw first-anchor hit closes");
+                        assert!(app.session.active().unwrap().doc.work_path.as_ref().unwrap().subpaths[0].closed);
+                    } else {
+                        let pen = app.ui.pen.as_ref().unwrap();
+                        assert_eq!(pen.knots.len(), count + usize::from(!hits), "{tool:?}, first={first}, distance={distance}");
+                        if !hits {
+                            assert_eq!(pen.knots.last().unwrap()[0], [ax + 1.0, ay], "an outside hit still places snapped geometry");
+                        }
+                        assert!(app.session.active().unwrap().doc.work_path.is_none());
+                        assert_eq!(app.session.active().unwrap().history.past_len(), history, "draft edits do not enter document history");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn canvas_new_pen_anchors_and_drag_moves_keep_view_snap_and_pixel_rounding() {
+        use crate::canvas::{ToolEvent, tool_event};
+        for tool in [Tool::Pen, Tool::CurvaturePen] {
+            for snap in [true, false] {
+                let mut app = app();
+                app.ui.tool = tool;
+                app.ui.tool_options.vector_mode = "path".into();
+                app.ui.extras.snap = snap;
+                app.ui.views[0].zoom = 1.0;
+                app.ui.views[0].fit_pending = false;
+                let prefs = serde_json::to_value(app.session.prefs()).unwrap();
+                assert!(app.session.prefs().tools.snap_vector_tools_and_transforms_to_pixel_grid);
+                let history = app.session.active().unwrap().history.past_len();
+                let expected_x = if snap { 0.0 } else { 4.0 };
+                tool_event(&mut app, ToolEvent::Down { x: 4.4, y: 40.6, pressure: 1.0 }, egui::Modifiers::NONE);
+                assert_eq!(
+                    app.ui.pen.as_ref().unwrap().knots[0][0],
+                    [expected_x, 41.0],
+                    "{tool:?}, snap={snap}: placement keeps existing document-edge snap and pixel rounding"
+                );
+                tool_event(&mut app, ToolEvent::Move { x: 4.4, y: 50.6, pressure: 1.0 }, egui::Modifiers::NONE);
+                tool_event(&mut app, ToolEvent::Up { x: 4.4, y: 50.6 }, egui::Modifiers::NONE);
+                let pen = app.ui.pen.as_ref().unwrap();
+                assert_eq!(pen.knots.len(), 1);
+                if tool == Tool::Pen {
+                    assert_eq!(pen.knots[0], [[expected_x, 41.0], [expected_x, 31.0], [expected_x, 51.0]], "snapped drag geometry retains symmetric handles");
+                } else {
+                    assert_eq!(pen.knots[0][0], [expected_x, 51.0], "the moving Curvature anchor remains snapped");
+                    assert!(pen.moving.is_none());
+                }
+                assert!(app.session.active().unwrap().doc.work_path.is_none());
+                assert_eq!(app.session.active().unwrap().history.past_len(), history);
+                assert_eq!(serde_json::to_value(app.session.prefs()).unwrap(), prefs);
+                assert_eq!(app.ui.extras.snap, snap);
+                assert!(app.prefs_rt.snap.is_none(), "the original release clears the snap gesture");
+            }
+        }
+    }
+
+    #[test]
+    fn canvas_pen_close_drag_keeps_snapped_handles_after_a_raw_anchor_hit() {
+        use crate::canvas::{ToolEvent, tool_event};
+        let mut app = app();
+        app.ui.tool = Tool::Pen;
+        app.ui.tool_options.vector_mode = "path".into();
+        app.ui.view.pixel_aspect = "anamorphic2To1".into();
+        app.ui.view.pixel_aspect_correction = true;
+        app.ui.views[0].zoom = 1.0;
+        app.ui.views[0].fit_pending = false;
+        app.last_canvas_rect = Rect::from_min_size(pos2(20.0, 30.0), vec2(640.0, 480.0));
+        for (x, y) in [(20.0, 20.0), (120.0, 20.0)] {
+            tool_event(&mut app, ToolEvent::Down { x, y, pressure: 1.0 }, egui::Modifiers::NONE);
+            tool_event(&mut app, ToolEvent::Up { x, y }, egui::Modifiers::NONE);
+        }
+        tool_event(&mut app, ToolEvent::Down { x: 22.5, y: 20.0, pressure: 1.0 }, egui::Modifiers::NONE);
+        assert_eq!(app.ui.pen.as_ref().unwrap().knots.last().unwrap()[0], [20.0, 20.0], "the raw hit creates the existing first-anchor stand-in");
+        tool_event(&mut app, ToolEvent::Move { x: 30.4, y: 40.6, pressure: 1.0 }, egui::Modifiers::NONE);
+        tool_event(&mut app, ToolEvent::Up { x: 30.4, y: 40.6 }, egui::Modifiers::NONE);
+        assert!(app.ui.pen.is_none());
+        let path = app.session.active().unwrap().doc.work_path.as_ref().unwrap();
+        assert_eq!(path.subpaths.len(), 1);
+        assert!(path.subpaths[0].closed);
+        assert_eq!(path.subpaths[0].knots.len(), 2);
+        let first = &path.subpaths[0].knots[0];
+        assert_eq!([first.anchor.x, first.anchor.y], [20.0, 20.0]);
+        assert_eq!([first.in_ctrl.x, first.in_ctrl.y], [10.0, -1.0]);
+        assert_eq!([first.out_ctrl.x, first.out_ctrl.y], [30.0, 41.0]);
+    }
+
     /// #1520: changing one corner through the Properties command must keep the other three
     /// independent, remain a live rectangle, and undo/redo as one geometry edit.
     #[test]
@@ -2600,3 +2792,151 @@ mod pen_draw_tests;
 #[cfg(test)]
 #[path = "vector_paint_tests.rs"]
 mod paint_tests;
+
+#[cfg(test)]
+mod aspect_preview_tests {
+    use super::{PenPath, freeform_finish, pen_grab_handle, pen_up};
+    use crate::PhotocraftApp;
+    use crate::canvas::ViewXform;
+    use crate::state::Tool;
+    use egui::{Color32, Modifiers, Pos2, Rect, pos2, vec2};
+    use serde_json::json;
+    #[test]
+    fn rendered_preview_stroke_width_follows_native_pixel_aspect() {
+        let mut failures = Vec::new();
+        for ppp in [1.0, 2.0] {
+            let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+            app.ui.tool_options.stroke_width = 20.0;
+            app.ui.tool_options.shape_fill = false;
+            app.session.tools.background = [1.0, 0.0, 0.0, 1.0];
+            app.session.tools.foreground = [0.0, 1.0, 0.0, 1.0];
+            let xf = ViewXform {
+                rect: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0)),
+                zoom: 1.0 / ppp,
+                aspect: 1.0,
+                center: [0.0, 0.0],
+                flip: false,
+                rotation: 0.0,
+            };
+            // Render the production overlay through wgpu; both canvas compositors use this same
+            // draw_shape_preview function. A missing adapter must fail rather than skip the proof.
+            let mut h = egui_kittest::Harness::builder().with_size(vec2(400.0, 400.0)).with_pixels_per_point(ppp).wgpu().build_ui_state(
+                |ui, (app, xf)| {
+                    ui.painter().rect_filled(ui.max_rect(), 0.0, Color32::WHITE);
+                    super::draw_shape_preview(app, ui.painter(), xf, Tool::Rectangle, [-60.0, -60.0], [60.0, 60.0], Modifiers::NONE);
+                },
+                (app, xf),
+            );
+            for aspect in [1.0, 2.0, 0.91] {
+                for rotation in [0.0, 90.0] {
+                    for flip in [false, true] {
+                        let xf = &mut h.state_mut().1;
+                        xf.aspect = aspect;
+                        xf.rotation = rotation;
+                        xf.flip = flip;
+                        let xf = *xf;
+                        h.run_steps(2);
+                        let image = h.render().expect("wgpu preview render");
+                        if let Ok(dir) = std::env::var("PHOTOCRAFT_PREVIEW_ARTIFACT_DIR") {
+                            std::fs::create_dir_all(&dir).expect("artifact directory");
+                            image.save(format!("{dir}/preview-ppp{ppp}-par{aspect}-rot{rotation}-flip{flip}.png")).expect("save preview");
+                        }
+                        for (edge, outward, expected) in [(pos2(-60.0, 0.0), vec2(-1.0, 0.0), 20.0 * aspect), (pos2(0.0, -60.0), vec2(0.0, -1.0), 20.0)] {
+                            let center = xf.to_screen(edge.x, edge.y) * ppp;
+                            let normal = (xf.to_screen(outward.x, outward.y) - xf.to_screen(0.0, 0.0)).normalized();
+                            let red: Vec<_> = (-30..=30)
+                                .filter(|offset| {
+                                    let p = center + normal * *offset as f32;
+                                    let c = image.get_pixel(p.x.floor() as u32, p.y.floor() as u32).0;
+                                    c[0] > 200 && c[1] < 128 && c[2] < 128
+                                })
+                                .collect();
+                            let width = red.last().zip(red.first()).map(|(last, first)| last - first + 1).unwrap_or(0) as f32;
+                            eprintln!("ppp={ppp} par={aspect} rotation={rotation} flip={flip} edge={edge:?}: rendered={width} expected={expected}");
+                            if (width - expected).abs() > 1.1 {
+                                failures.push(format!("ppp={ppp} par={aspect} rotation={rotation} flip={flip} edge={edge:?}: {width} != {expected}"));
+                            }
+                        }
+                        let fill = image.get_pixel((200.0 * ppp) as u32, (200.0 * ppp) as u32).0;
+                        assert!(fill[0] > 240 && fill[1] > 240 && fill[2] > 240, "unfilled center preserved");
+                    }
+                }
+            }
+            h.state_mut().0.ui.tool_options.shape_fill = true;
+            h.run_steps(2);
+            let filled = h.render().expect("filled preview render");
+            let center = filled.get_pixel((200.0 * ppp) as u32, (200.0 * ppp) as u32).0;
+            assert!(center[1] > 240 && center[0] < 10 && center[2] < 10, "foreground fill preserved");
+        }
+        assert!(failures.is_empty(), "native stroke width mismatch:\n{}", failures.join("\n"));
+    }
+    #[test]
+    fn aspect_pen_outgoing_handle_uses_screen_radius() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                a.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+                a.sync_views();
+                a.ppp = ppp;
+                a.ui.views[0].zoom = ppp;
+                a.ui.views[0].rotation = 37.0;
+                a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                for (points, expected) in [(2.0, true), (25.0, false)] {
+                    a.ui.pen = Some(PenPath { knots: vec![[[20.0, 40.0], [10.0, 40.0], [80.0, 40.0]]], ..Default::default() });
+                    assert_eq!(pen_grab_handle(&mut a, 80.0 + points / aspect, 40.0), expected, "aspect={aspect}, ppp={ppp}, points={points}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aspect_pen_closing_click_jitter_is_measured_on_screen() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for (points, collapsed) in [(1.5, true), (3.0, false)] {
+                    let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                    a.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+                    a.sync_views();
+                    a.ppp = ppp;
+                    a.ui.views[0].zoom = ppp;
+                    a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                    a.ui.pen = Some(PenPath {
+                        knots: vec![
+                            [[40.0, 40.0]; 3],
+                            [[140.0, 40.0]; 3],
+                            [[140.0, 140.0]; 3],
+                            [[40.0, 40.0], [40.0 - points / aspect, 40.0], [40.0 + points / aspect, 40.0]],
+                        ],
+                        dragging: true,
+                        ..Default::default()
+                    });
+                    pen_up(&mut a);
+                    let knot = a.session.active().unwrap().doc.work_path.as_ref().unwrap().subpaths[0].knots[0];
+                    assert_eq!(knot.out_ctrl == knot.anchor, collapsed, "aspect={aspect}, ppp={ppp}, points={points}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn aspect_freeform_alt_segments_keep_upstream_geometry_and_screen_closure() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                for (points, closed) in [(2.0, true), (25.0, false)] {
+                    let mut a = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                    a.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+                    a.sync_views();
+                    a.ppp = ppp;
+                    a.ui.views[0].zoom = ppp;
+                    a.ui.views[0].rotation = 37.0;
+                    a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                    let trace = [[40.0, 40.0, 1.0], [140.0, 40.0, 1.0], [140.0, 140.0, 1.0], [40.0, 140.0, 1.0], [40.0 - points / aspect, 40.0, 1.0]];
+                    freeform_finish(&mut a, &trace, &[1, 2, 3, 4]);
+                    let sub = &a.session.active().unwrap().doc.work_path.as_ref().unwrap().subpaths[0];
+                    assert_eq!(sub.closed, closed, "aspect={aspect}, ppp={ppp}, points={points}");
+                    assert_eq!(sub.knots.len(), if closed { 4 } else { 5 });
+                    assert!(sub.knots.iter().all(|k| k.in_ctrl == k.anchor && k.out_ctrl == k.anchor), "Alt segments stay straight");
+                }
+            }
+        }
+    }
+}

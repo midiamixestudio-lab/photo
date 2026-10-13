@@ -83,28 +83,45 @@ impl StrokeOptions {
 struct DragCache {
     shape: photocraft_doc::ShapeLayer,
     clip: egui::Rect,
+    view: crate::canvas::ViewXform,
+    ppp: f32,
     image_rect: egui::Rect,
     texture: egui::TextureHandle,
 }
 
 /// The drag uses the committed vector rasterizer. Cache by geometry/style/visible region, and
 /// cap proxy resolution so oversized windows cannot allocate a document-sized preview.
-pub fn paint_shape_preview(painter: &egui::Painter, shape: &photocraft_doc::ShapeLayer) {
+pub fn paint_shape_preview(painter: &egui::Painter, shape: &photocraft_doc::ShapeLayer, xf: &crate::canvas::ViewXform) {
     let clip = painter.clip_rect();
-    if !clip.is_finite() || clip.is_negative() {
+    if !clip.is_finite() || clip.is_negative() || !xf.zoom.is_finite() || xf.zoom <= 0.0 {
         return;
     }
+    let ppp = painter.ctx().pixels_per_point();
     let id = egui::Id::new("shape-drag-render");
     let cached = painter.ctx().data(|d| d.get_temp::<DragCache>(id));
-    let cache = cached.filter(|c| c.shape == *shape && c.clip == clip).or_else(|| {
-        let scale = (2048.0 / clip.width().max(clip.height()).max(1.0)).min(1.0);
+    let cache = cached.filter(|c| c.shape == *shape && c.clip == clip && c.view == *xf && c.ppp == ppp).or_else(|| {
+        let corners = [clip.left_top(), clip.right_top(), clip.right_bottom(), clip.left_bottom()].map(|p| {
+            let d = xf.to_doc(p);
+            egui::pos2(d[0] as f32, d[1] as f32)
+        });
+        let native = egui::Rect::from_points(&corners);
+        if !native.is_finite() || !native.is_positive() {
+            return None;
+        }
+        // Render before aspect, rotation and flip, using the largest display scale for detail.
+        // Keep the existing 2048-side cap for large visible regions and tiny zooms.
+        let scale = (xf.zoom_x().max(xf.zoom) * ppp).min(2048.0 / native.width().max(native.height()).max(1.0));
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
         let mut proxy = shape.clone();
-        let tr = photocraft_geom::Affine { m: [scale as f64, 0.0, 0.0, scale as f64, -(clip.left() * scale) as f64, -(clip.top() * scale) as f64] };
+        let tr = photocraft_geom::Affine { m: [scale as f64, 0.0, 0.0, scale as f64, -(native.left() * scale) as f64, -(native.top() * scale) as f64] };
         proxy.path = proxy.path.transform(&tr);
         if let Some(stroke) = proxy.stroke.as_mut() {
             stroke.width *= scale;
         }
-        let canvas = photocraft_geom::Rect::from_size(photocraft_geom::Size::new((clip.width() * scale).ceil() as u32, (clip.height() * scale).ceil() as u32));
+        let canvas =
+            photocraft_geom::Rect::from_size(photocraft_geom::Size::new((native.width() * scale).ceil() as u32, (native.height() * scale).ceil() as u32));
         let compiled = photocraft_vector::CompiledShape::new(&proxy, photocraft_vector::DEFAULT_TOLERANCE, canvas);
         let bounds = compiled.bounds()?.intersect(&canvas);
         if bounds.is_empty() {
@@ -117,16 +134,29 @@ pub fn paint_shape_preview(painter: &egui::Painter, shape: &photocraft_doc::Shap
             egui::ColorImage::from_rgba_unmultiplied([bounds.width() as usize, bounds.height() as usize], &bytes),
             egui::TextureOptions::LINEAR,
         );
-        let screen = |x: i32, y: i32| clip.min + vec2(x as f32, y as f32) / scale;
+        let doc = |x: i32, y: i32| native.min + vec2(x as f32, y as f32) / scale;
         Some(DragCache {
             shape: shape.clone(),
             clip,
-            image_rect: egui::Rect::from_min_max(screen(bounds.x0, bounds.y0), screen(bounds.x1, bounds.y1)),
+            view: *xf,
+            ppp,
+            image_rect: egui::Rect::from_min_max(doc(bounds.x0, bounds.y0), doc(bounds.x1, bounds.y1)),
             texture,
         })
     });
     if let Some(cache) = cache {
-        painter.image(cache.texture.id(), cache.image_rect, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+        let r = cache.image_rect;
+        let mut mesh = egui::Mesh::with_texture(cache.texture.id());
+        for (p, uv) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip([
+            egui::pos2(0.0, 0.0),
+            egui::pos2(1.0, 0.0),
+            egui::pos2(1.0, 1.0),
+            egui::pos2(0.0, 1.0),
+        ]) {
+            mesh.vertices.push(egui::epaint::Vertex { pos: xf.to_screen(p.x, p.y), uv, color: egui::Color32::WHITE });
+        }
+        mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+        painter.add(mesh);
         painter.ctx().data_mut(|d| d.insert_temp(id, cache));
     }
 }

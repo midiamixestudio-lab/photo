@@ -655,6 +655,10 @@
 	200%	200 %
 	Print Size	Druckgröße
 	Pixel Aspect Ratio	Pixel-Seitenverhältnis
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Vorschauen für Borstenpinsel sind noch nicht implementiert
+	Artboard-specific guides are not implemented	Zeichenflächenspezifische Hilfslinien sind noch nicht implementiert
+
 	Pixel Aspect Ratio Correction	Korrektur des Pixel-Seitenverhältnisses
 	Custom Pixel Aspect Ratio…	Benutzerdefiniertes Pixel-Seitenverhältnis…
 	Square	Quadratisch

@@ -660,6 +660,10 @@
 	300%	300%
 	Print Size	印刷サイズ
 	Pixel Aspect Ratio	ピクセル縦横比
+# Unavailable View overlays
+	Bristle brush previews are not implemented	ブリッスルブラシのプレビューは未実装です
+	Artboard-specific guides are not implemented	アートボード固有のガイドは未実装です
+
 	Pixel Aspect Ratio Correction	ピクセル縦横比を補正
 	Custom Pixel Aspect Ratio…	ピクセル縦横比をカスタム…
 	Square	正方形ピクセル

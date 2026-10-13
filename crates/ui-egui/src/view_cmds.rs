@@ -458,9 +458,20 @@ pub fn handles(id: &str) -> bool {
     )
 }
 
+pub fn unavailable_reason(id: &str) -> Option<&'static str> {
+    match id {
+        "view.show.brushPreview" => Some(tl!("Bristle brush previews are not implemented")),
+        "view.show.artboardGuides" => Some(tl!("Artboard-specific guides are not implemented")),
+        _ => None,
+    }
+}
+
 pub fn is_enabled(app: &PhotocraftApp, id: &str) -> Option<bool> {
     if !handles(id) && !wraps(id) {
         return None;
+    }
+    if unavailable_reason(id).is_some() {
+        return Some(false);
     }
     let doc = app.session.active().is_some();
     Some(match id {
@@ -617,7 +628,17 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &V
     if !handles(id) {
         return None;
     }
-    Some(run(app, ctx, id, params))
+    if let Some(reason) = unavailable_reason(id) {
+        return Some(Err(reason.into()));
+    }
+    let result = run(app, ctx, id, params);
+    if result.is_ok()
+        && id.starts_with("view.show.")
+        && let Some(puppet) = &mut app.distort.puppet
+    {
+        puppet.show_mesh = app.ui.view.show.mesh;
+    }
+    Some(result)
 }
 
 fn flag_param(p: &Value, cur: bool) -> bool {

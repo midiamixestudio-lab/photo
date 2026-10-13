@@ -54,6 +54,10 @@ pub fn light_share(luma: f32) -> f32 {
     (x * x * (3.0 - 2.0 * x) * FADE_STEPS).round() / FADE_STEPS
 }
 
+pub fn shows_for_view(zoom: f32, aspect: f32) -> bool {
+    shows_at(zoom * aspect.min(1.0))
+}
+
 /// One grid line piece in document pixels, axis-aligned, with its colour.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridSeg {

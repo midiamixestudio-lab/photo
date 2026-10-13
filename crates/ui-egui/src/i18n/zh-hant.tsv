@@ -670,6 +670,10 @@
 	300%	300%
 	Print Size	列印尺寸
 	Pixel Aspect Ratio	像素外觀比例
+# Unavailable View overlays
+	Bristle brush previews are not implemented	尚未實作鬃毛筆刷預覽
+	Artboard-specific guides are not implemented	尚未實作工作區域專用參考線
+
 	Pixel Aspect Ratio Correction	像素外觀比例校正
 	Custom Pixel Aspect Ratio…	自訂像素外觀比例…
 	Square	正方形

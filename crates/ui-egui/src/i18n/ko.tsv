@@ -637,6 +637,10 @@
 	200%	200%
 	Print Size	인쇄 크기
 	Pixel Aspect Ratio	픽셀 종횡비
+# Unavailable View overlays
+	Bristle brush previews are not implemented	강모 브러시 미리보기는 아직 구현되지 않았습니다
+	Artboard-specific guides are not implemented	아트보드별 안내선은 아직 구현되지 않았습니다
+
 	Pixel Aspect Ratio Correction	픽셀 종횡비 보정
 	Custom Pixel Aspect Ratio…	사용자 정의 픽셀 종횡비…
 	Square	정사각형

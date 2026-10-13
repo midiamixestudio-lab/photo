@@ -155,6 +155,30 @@ fn the_cursor_shows_plus_or_minus() {
     assert_eq!(badge(&app, Tool::DeleteAnchorPoint, Modifiers::COMMAND), None, "⌘ is Direct Selection");
 }
 
+#[test]
+fn aspect_add_delete_anchor_use_screen_distance() {
+    for aspect in [0.1, 10.0] {
+        for ppp in [1.0, 2.0] {
+            for (tool, p, expected) in [
+                (Tool::DeleteAnchorPoint, [40.0 + 2.0 / aspect, 40.0], true),
+                (Tool::DeleteAnchorPoint, [40.0 - 25.0 / aspect, 40.0], false),
+                (Tool::AddAnchorPoint, [40.0 - 2.0 / aspect, 80.0], true),
+                (Tool::AddAnchorPoint, [40.0 - 25.0 / aspect, 80.0], false),
+            ] {
+                let mut a = app(tool);
+                with_path(&mut a);
+                a.ppp = ppp;
+                a.ui.views[0].zoom = ppp;
+                a.ui.views[0].rotation = 37.0;
+                a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                let n = steps(&a);
+                click(&mut a, p, Modifiers::NONE);
+                assert_eq!(steps(&a) > n, expected, "aspect={aspect}, ppp={ppp}, tool={tool:?}, p={p:?}");
+            }
+        }
+    }
+}
+
 /// #4144: with Auto Add/Delete (on by default) a Pen click on a segment of the active path adds
 /// an anchor and a click on one of its anchors deletes it, one step each, and no Pen path starts.
 #[test]

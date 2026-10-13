@@ -650,6 +650,10 @@
 	300%	300 %
 	Print Size	Taille d'impression
 	Pixel Aspect Ratio	Format des pixels
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Les aperçus des brosses à poils ne sont pas implémentés
+	Artboard-specific guides are not implemented	Les repères propres aux plans de travail ne sont pas implémentés
+
 	Pixel Aspect Ratio Correction	Correction du format des pixels
 	Custom Pixel Aspect Ratio…	Format des pixels personnalisé…
 	Square	Carré

@@ -27,6 +27,7 @@ const MAX_SIDE: u16 = if cfg!(any(target_os = "windows", target_os = "macos")) {
 #[derive(Clone, Debug, PartialEq)]
 enum Shape {
     Circle { radius: f32, centre: bool },
+    Ellipse { radii: Vec2, angle: f32, centre: bool },
     Crosshair { length: f32, gap: f32 },
     Hand { closed: bool },
     Zoom { out: bool },
@@ -70,6 +71,23 @@ impl egui::plugin::Plugin for CursorLifecycle {
 
 pub(crate) fn circle(painter: &Painter, at: Pos2, radius: f32, centre: bool) -> CursorIcon {
     show(painter, at, Shape::Circle { radius, centre })
+}
+
+/// A document-sized tip under non-square pixel correction; `angle` is the camera rotation.
+pub(crate) fn ellipse(painter: &Painter, at: Pos2, radii: Vec2, angle: f32, centre: bool) -> CursorIcon {
+    show(painter, at, Shape::Ellipse { radii, angle, centre })
+}
+
+pub(crate) fn ellipse_points(at: Pos2, radii: Vec2, angle: f32) -> Vec<Pos2> {
+    let (sin, cos) = angle.sin_cos();
+    let n = ((radii.max_elem() * 0.5) as usize).clamp(32, 192).div_ceil(4) * 4;
+    (0..n)
+        .map(|i| {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            let q = vec2(a.cos(), a.sin()) * radii;
+            at + vec2(q.x * cos - q.y * sin, q.x * sin + q.y * cos)
+        })
+        .collect()
 }
 
 pub(crate) fn crosshair(painter: &Painter, at: Pos2, length: f32, gap: f32) -> CursorIcon {
@@ -193,6 +211,12 @@ fn paint(painter: &Painter, at: Pos2, shape: &Shape) {
                     paint_crosshair(painter, at, 3.0, 0.0, stroke);
                 }
             }
+            Shape::Ellipse { radii, angle, centre } => {
+                painter.add(egui::Shape::closed_line(ellipse_points(at, *radii, *angle), stroke));
+                if *centre {
+                    paint_crosshair(painter, at, 3.0, 0.0, stroke);
+                }
+            }
             // Only ever a bitmap: without one the OS draws its own grab cursors.
             Shape::Hand { .. } | Shape::Zoom { .. } => {}
         }
@@ -219,6 +243,12 @@ fn extent(shape: &Shape) -> Option<f32> {
                 return None;
             }
             if *centre { radius.max(3.0) } else { *radius }
+        }
+        Shape::Ellipse { radii, angle, centre } => {
+            if !radii.is_finite() || radii.min_elem() <= 0.0 || !angle.is_finite() {
+                return None;
+            }
+            if *centre { radii.max_elem().max(3.0) } else { radii.max_elem() }
         }
         Shape::Crosshair { length, gap } => {
             if !length.is_finite() || !gap.is_finite() || *gap < 0.0 || length < gap {
@@ -261,6 +291,15 @@ fn coverage(shape: &Shape, dx: f32, dy: f32, scale: f32) -> (f32, f32) {
     match shape {
         Shape::Circle { radius, centre } => {
             let ring = (x.hypot(y) - radius * scale).abs();
+            let distance = if *centre { ring.min(cross_distance(x, y, 3.0 * scale, 0.0)) } else { ring };
+            stroke_coverage(distance, scale)
+        }
+        Shape::Ellipse { radii, angle, centre } => {
+            let (sin, cos) = angle.sin_cos();
+            let q = vec2(dx * cos + dy * sin, -dx * sin + dy * cos) / (*radii * scale);
+            let len = q.length();
+            let gradient = (q / (*radii * scale)).length();
+            let ring = if gradient > 1e-6 { ((len - 1.0) * len / gradient).abs() } else { radii.min_elem() * scale };
             let distance = if *centre { ring.min(cross_distance(x, y, 3.0 * scale, 0.0)) } else { ring };
             stroke_coverage(distance, scale)
         }

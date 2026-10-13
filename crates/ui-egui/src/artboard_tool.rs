@@ -76,14 +76,13 @@ fn board_at(doc: &Document, p: [f64; 2]) -> Option<(LayerId, [i64; 4])> {
     doc.artboards().iter().rev().map(|b| (b.0, edges(b.2.rect))).find(|b| inside(as_f64(b.1)))
 }
 
-fn tolerance(app: &PhotocraftApp) -> f64 {
-    HANDLE_PX / f64::from(app.point_zoom()).max(0.01)
-}
-
 /// The selected board's handle under a document point.
 fn handle_at(app: &PhotocraftApp, p: [f64; 2]) -> Option<(LayerId, [i64; 4], i8, i8)> {
     let (id, r) = active_board(app)?;
-    match hit(as_f64(r), p, tolerance(app)) {
+    let metric = crate::canvas::ScreenMetric::active(app);
+    let [x0, y0] = metric.point([r[0] as f64, r[1] as f64]);
+    let [x1, y1] = metric.point([r[2] as f64, r[3] as f64]);
+    match hit([x0, y0, x1, y1], metric.point(p), HANDLE_PX) {
         Hit::Handle(hx, hy) => Some((id, r, hx, hy)),
         _ => None,
     }
@@ -97,17 +96,17 @@ type PlusButtons = [(&'static str, [f64; 2]); 4];
 fn plus_buttons(app: &PhotocraftApp) -> Option<(LayerId, PlusButtons)> {
     let (id, r) = active_board(app)?;
     let r = as_f64(r);
-    let off = PLUS_OFFSET_PX / f64::from(app.point_zoom()).max(0.01);
+    let off = crate::canvas::ScreenMetric::active(app).reach(PLUS_OFFSET_PX);
     let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
-    let (hw, hh) = ((r[2] - r[0]) / 2.0 + off, (r[3] - r[1]) / 2.0 + off);
+    let (hw, hh) = ((r[2] - r[0]) / 2.0 + off[0], (r[3] - r[1]) / 2.0 + off[1]);
     Some((id, SIDES.map(|(side, [dx, dy])| (side, [cx + dx * hw, cy + dy * hh]))))
 }
 
 /// The side of the "+" button under a document point.
 fn plus_at(app: &PhotocraftApp, p: [f64; 2]) -> Option<(LayerId, &'static str)> {
     let (id, buttons) = plus_buttons(app)?;
-    let r = PLUS_RADIUS_PX / f64::from(app.point_zoom()).max(0.01);
-    buttons.iter().find(|(_, c)| (p[0] - c[0]).hypot(p[1] - c[1]) <= r).map(|(side, _)| (id, *side))
+    let metric = crate::canvas::ScreenMetric::active(app);
+    buttons.iter().find(|(_, c)| metric.distance(p, *c) <= PLUS_RADIUS_PX).map(|(side, _)| (id, *side))
 }
 
 /// The board drawn from `a` to `b`, edges on whole pixels.
@@ -219,7 +218,7 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) ->
             let r = preview(&d);
             let result = match d {
                 ArtboardDrag::New { start, cur } => {
-                    let screen = (cur[0] - start[0]).hypot(cur[1] - start[1]) * f64::from(app.point_zoom());
+                    let screen = crate::canvas::ScreenMetric::active(app).distance(cur, start);
                     if screen < CLICK_PX || r[2] <= r[0] || r[3] <= r[1] {
                         return true;
                     }
@@ -435,5 +434,27 @@ mod tests {
         assert_eq!(app.ui.tool, Tool::Artboard);
         press(&mut app, egui::Modifiers::SHIFT);
         assert_eq!(app.ui.tool, Tool::Move);
+    }
+    #[test]
+    fn aspect_artboard_handles_and_plus_buttons_match_screen_geometry() {
+        for aspect in [0.1, 10.0] {
+            for ppp in [1.0, 2.0] {
+                let mut a = app();
+                a.run("layer.new.artboard", json!({"rect": [20, 30, 100, 80]})).unwrap();
+                a.ppp = ppp;
+                a.ui.views[0].zoom = ppp;
+                a.ui.views[0].rotation = 37.0;
+                a.ui.view.pixel_aspect = format!("custom:{aspect}:Test");
+                assert!(handle_at(&a, [120.0 + 2.0 / aspect, 70.0]).is_some(), "two points outside the right edge, aspect={aspect}");
+                assert!(handle_at(&a, [120.0 + 25.0 / aspect, 70.0]).is_none(), "25 points outside the right edge, aspect={aspect}");
+                let (_, buttons) = plus_buttons(&a).unwrap();
+                let right = buttons.iter().find(|b| b.0 == "right").unwrap().1;
+                let xf = ViewXform::active(&a).unwrap();
+                let offset = xf.to_screen(right[0] as f32, right[1] as f32).distance(xf.to_screen(120.0, 70.0));
+                assert!((f64::from(offset) - PLUS_OFFSET_PX).abs() < 0.001, "aspect={aspect}, offset={offset}");
+                assert!(plus_at(&a, [right[0] + 2.0 / aspect, right[1]]).is_some());
+                assert!(plus_at(&a, [right[0] + 25.0 / aspect, right[1]]).is_none());
+            }
+        }
     }
 }

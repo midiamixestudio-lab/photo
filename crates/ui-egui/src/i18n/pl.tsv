@@ -659,6 +659,10 @@
 	300%	300%
 	Print Size	Rozmiar wydruku
 	Pixel Aspect Ratio	Proporcje pikseli
+# Unavailable View overlays
+	Bristle brush previews are not implemented	Podglądy pędzli z włosiem nie są zaimplementowane
+	Artboard-specific guides are not implemented	Linie pomocnicze poszczególnych obszarów kompozycji nie są zaimplementowane
+
 	Pixel Aspect Ratio Correction	Korekcja proporcji pikseli
 	Custom Pixel Aspect Ratio…	Niestandardowe proporcje pikseli…
 	Square	Kwadratowe

@@ -37,9 +37,11 @@ pub fn effective(tool: Tool, mods: Modifiers) -> Option<Tool> {
 /// segment (Add) or anchor (Delete) hit on it. An anchor hit with Add, or a segment with Delete,
 /// edits nothing.
 fn target(app: &PhotocraftApp, tool: Tool, p: [f64; 2]) -> Option<(PathRef, Path, Hit)> {
-    let tol = 6.0 / f64::from(app.point_zoom().max(0.01));
-    let (r, path, hit) =
-        crate::direct_select::candidates(app).into_iter().find_map(|(r, path)| edit::hit(&path, Point::new(p[0], p[1]), tol, &[]).map(|h| (r, path, h)))?;
+    let metric = crate::canvas::ScreenMetric::active(app);
+    let p = metric.point(p);
+    let (r, path, hit) = crate::direct_select::candidates(app)
+        .into_iter()
+        .find_map(|(r, path)| edit::hit(&path.transform(&metric.affine()), Point::new(p[0], p[1]), 6.0, &[]).map(|h| (r, path, h)))?;
     match (tool, hit) {
         (Tool::AddAnchorPoint, Hit::Segment(..)) | (Tool::DeleteAnchorPoint, Hit::Anchor(_)) => Some((r, path, hit)),
         _ => None,

@@ -172,13 +172,13 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
     // outside the selection moves the layer as the Move tool does (#2681).
     let tool = crate::canvas::event_tool(app, mods);
     let moves_layer = crate::canvas::command_moves_layer(app, tool, p, mods);
-    let crop_tol = crate::crop_ui::tolerance(app);
+    let metric = crate::canvas::ScreenMetric::active(app);
     let gesture = if let Some(t) = &app.ui.transform {
         if t.mode == crate::state::TransformMode::Distort {
             // Distort is freehand corner placement (fitting an image onto a screen, say): guides
             // and edges pulling the corners about only get in the way.
             None
-        } else if near_handle(&t.quad, p, crate::transform_tool::handle_tolerance(app)) {
+        } else if near_handle(&t.quad.map(|q| metric.point(q)), metric.point(p), crate::transform_tool::HANDLE_PX) {
             Some((Gesture::Point, vec![LayerId(t.layer)]))
         } else if in_quad(&t.quad, p) {
             Some((Gesture::TransformMove { rect: quad_rect(&t.quad) }, vec![LayerId(t.layer)]))
@@ -193,7 +193,7 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
     } else if tool == Tool::Crop
         && (crate::crop_mode::classic(app) || app.crop.default_frame)
         && let Some(rect) =
-            app.ui.crop_rect.filter(|r| crate::crop_ui::angle(app) == 0.0 && crate::crop_ui::hit(*r, p, crop_tol) == crate::crop_ui::Hit::Inside)
+            app.ui.crop_rect.filter(|r| crate::crop_ui::angle(app) == 0.0 && crate::crop_ui::hit_screen(app, *r, p) == crate::crop_ui::Hit::Inside)
     {
         // Inside the untouched default frame draws a new crop (in both modes): snap its corner, not
         // the old canvas-sized frame's bounds. An edited Classic Mode frame still moves and snaps
@@ -201,8 +201,7 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
         let gesture = if app.crop.default_frame { Gesture::Point } else { Gesture::Move { rect } };
         Some((gesture, Vec::new()))
     } else if tool == Tool::Crop
-        && (crate::crop_ui::turns_at(app, p)
-            || app.ui.crop_rect.is_some_and(|r| crate::crop_ui::hit_turned(r, crate::crop_ui::angle(app), p, crop_tol) == crate::crop_ui::Hit::Inside))
+        && (crate::crop_ui::turns_at(app, p) || app.ui.crop_rect.is_some_and(|r| crate::crop_ui::hit_screen(app, r, p) == crate::crop_ui::Hit::Inside))
     {
         // Turning the frame, moving a turned one (its edges don't line up with anything), or in
         // the default mode moving or turning the image under the box: no snapping.
@@ -356,12 +355,7 @@ pub fn filter_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifier
             let p = match app.prefs_rt.snap.as_ref().map(|s| &s.gesture) {
                 Some(Gesture::Point)
                     if !(app.ui.tool == Tool::Crop
-                        && app.ui.crop_rect.is_some_and(|r| {
-                            matches!(
-                                crate::crop_ui::hit_turned(r, crate::crop_ui::angle(app), [x, y], crate::crop_ui::tolerance(app)),
-                                crate::crop_ui::Hit::Handle(..)
-                            )
-                        })) =>
+                        && app.ui.crop_rect.is_some_and(|r| matches!(crate::crop_ui::hit_screen(app, r, [x, y]), crate::crop_ui::Hit::Handle(..)))) =>
                 {
                     let q = apply(app, [x, y], mods);
                     pixel_round(app, q)

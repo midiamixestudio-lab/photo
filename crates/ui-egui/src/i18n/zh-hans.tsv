@@ -665,6 +665,10 @@
 	300%	300%
 	Print Size	打印尺寸
 	Pixel Aspect Ratio	像素长宽比
+# Unavailable View overlays
+	Bristle brush previews are not implemented	尚未实现鬃毛画笔预览
+	Artboard-specific guides are not implemented	尚未实现画板专用参考线
+
 	Pixel Aspect Ratio Correction	像素长宽比校正
 	Custom Pixel Aspect Ratio…	自定像素长宽比…
 	Square	正方形
