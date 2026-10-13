@@ -1,10 +1,9 @@
-# Localization parity
 
 > **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Serbian catalog; previously minor: Italian native review) · **Target:** Adobe Photoshop 2026
 
 Per-language status of PhotoCraft's UI. How catalogs work and how to add one:
 [`localization.md`](localization.md). Language notes: [Korean](localization-ko.md), [Spanish](localization-es.md),
-[Simplified Chinese](localization-zh-hans.md), [Italian](localization-it.md).
+[Simplified Chinese](localization-zh-hans.md), [Italian](localization-it.md), [Bengali](localization-bn.md).
 
 **How measured.** `cargo xtask i18n-coverage` (`xtask/src/i18n_coverage.rs`) defines the key
 universe: `tl!("…")` literals and `trn(` plurals in `ui-egui` (tests excluded), menu-catalog
