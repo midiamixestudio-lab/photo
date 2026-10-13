@@ -227,34 +227,48 @@ fn stroke(s: &mut Session, p: &Value) -> Result<Value> {
 /// Histogram equalization, like Photoshop's: one CDF over the R, G and B values of
 /// the selected pixels, applied to every channel.
 fn equalize(s: &mut Session, p: &Value) -> Result<Value> {
-    map_pixels(s, "Equalize", p, |_, px, cover| {
-        let mut hist = [0f64; 256];
-        for (p, &k) in px.iter().zip(cover) {
-            if k > 0.0 && p[3] > 0.0 {
-                for &v in &p[..3] {
-                    hist[(v.clamp(0.0, 1.0) * 255.0).round() as usize] += 1.0;
-                }
+    if crate::adjust_cmds::adjust_as_smart_filter(s, "equalize", "Equalize", p)? {
+        return Ok(Value::Null);
+    }
+    map_pixels(s, "Equalize", p, |_, px, cover| equalize_covered(px, cover))
+}
+
+/// Histogram equalization of opaque covered pixels. The smart-filter path equalizes the whole
+/// source; the filter mask is what limits it to a selection.
+pub(crate) fn equalize_rgba(px: &mut [[f32; 4]]) {
+    equalize_covered(px, &vec![1.0; px.len()]);
+}
+
+fn equalize_covered(px: &mut [[f32; 4]], cover: &[f32]) {
+    let mut hist = [0f64; 256];
+    for (p, &k) in px.iter().zip(cover) {
+        if k > 0.0 && p[3] > 0.0 {
+            for &v in &p[..3] {
+                hist[(v.clamp(0.0, 1.0) * 255.0).round() as usize] += 1.0;
             }
         }
-        let total: f64 = hist.iter().sum();
-        if total == 0.0 {
-            return;
+    }
+    let total: f64 = hist.iter().sum();
+    if total == 0.0 {
+        return;
+    }
+    let first = hist.iter().copied().find(|v| *v > 0.0).unwrap_or(0.0);
+    let mut lut = [0f32; 256];
+    let mut acc = 0.0;
+    for (i, h) in hist.iter().enumerate() {
+        acc += h;
+        lut[i] = if total > first { ((acc - first) / (total - first)).clamp(0.0, 1.0) as f32 } else { i as f32 / 255.0 };
+    }
+    // Same 256 bins as the histogram, at every depth (like Photoshop).
+    let map = |v: f32| lut[(v.clamp(0.0, 1.0) * 255.0).round() as usize];
+    for (p, &k) in px.iter_mut().zip(cover) {
+        if k <= 0.0 {
+            continue;
         }
-        let first = hist.iter().copied().find(|v| *v > 0.0).unwrap_or(0.0);
-        let mut lut = [0f32; 256];
-        let mut acc = 0.0;
-        for (i, h) in hist.iter().enumerate() {
-            acc += h;
-            lut[i] = if total > first { ((acc - first) / (total - first)).clamp(0.0, 1.0) as f32 } else { i as f32 / 255.0 };
+        for v in &mut p[..3] {
+            *v = map(*v);
         }
-        // Same 256 bins as the histogram, at every depth (like Photoshop).
-        let map = |v: f32| lut[(v.clamp(0.0, 1.0) * 255.0).round() as usize];
-        for p in px.iter_mut() {
-            for v in &mut p[..3] {
-                *v = map(*v);
-            }
-        }
-    })
+    }
 }
 
 /// Filter › Blur › Average: the selection (or layer) filled with its mean colour.
@@ -437,20 +451,11 @@ pub fn reveal_all_bounds(doc: &Document) -> Rect {
 
 // ---------- layers ----------
 
-fn layer_from_background(s: &mut Session, p: &Value) -> Result<Value> {
-    let d = s.active().ok_or(EngineError::NoDocument)?;
-    if d.doc.background().is_none() && p.get("ifPresent").and_then(Value::as_bool) == Some(true) {
-        return Ok(json!({"layer": null}));
-    }
-    // `select: false`: the targeted layer stays targeted, as when a Photoshop action's `set`
-    // names the Background while another layer is selected.
-    let select = p.get("select").and_then(Value::as_bool).unwrap_or(true);
+fn layer_from_background(s: &mut Session) -> Result<Value> {
     let id = s.edit("Layer From Background", |doc, active| {
         let l = doc.background_mut().ok_or(EngineError::Other("the document has no Background layer".into()))?;
         unlock_background(l);
-        if select || active.is_none() {
-            *active = Some(l.id);
-        }
+        *active = Some(l.id);
         Ok(l.id)
     })?;
     Ok(json!({"layer": id.0}))
@@ -857,7 +862,7 @@ pub fn specs() -> Vec<CommandSpec> {
             })?;
             Ok(json!({"selected": true}))
         }),
-        spec!("image.adjustments.equalize", "Equalize", &["Image", "Adjustments"], None, "{}", has_pixels, equalize),
+        spec!("image.adjustments.equalize", "Equalize", &["Image", "Adjustments"], None, "{}", crate::adjust_cmds::has_pixels_or_smart, equalize),
         spec!("image.revealAll", "Reveal All", &["Image"], None, "{}", has_doc, |s, _| {
             let d = s.active().ok_or(EngineError::NoDocument)?;
             let all = reveal_all_bounds(&d.doc);
@@ -867,15 +872,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.execute("image.crop", json!({"x": all.x0, "y": all.y0, "width": all.width(), "height": all.height(), "deleteCroppedPixels": false}))?;
             Ok(json!({"changed": true}))
         }),
-        spec!(
-            "layer.new.layerFromBackground",
-            "Layer From Background…",
-            &["Layer", "New"],
-            None,
-            r##"{"ifPresent":bool=false (true: a document without a Background is left as it is, as a Photoshop action's step needs on an image that opened as a normal layer),"select":bool=true (false: the targeted layer stays targeted)}"##,
-            has_background,
-            layer_from_background
-        ),
+        spec!("layer.new.layerFromBackground", "Layer From Background…", &["Layer", "New"], None, "{}", has_background, |s, _| layer_from_background(s)),
         spec!("layer.layerStyle.copyLayerStyle", "Copy Layer Style", &["Layer", "Layer Style"], None, r##"{"layer":id?}"##, has_layer, |s, p| {
             let id = layer_param(s, p)?;
             let l = s.active().and_then(|d| d.doc.layer(id)).ok_or(EngineError::NoLayer(id))?;
