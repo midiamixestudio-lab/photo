@@ -606,6 +606,111 @@ fn a_16_bit_lab_invert_layer_keeps_greys_neutral() {
     assert!((lab[0] - 75.0).abs() < 0.1 && lab[1].abs() < 0.05 && lab[2].abs() < 0.05, "{lab:?}");
 }
 
+/// A CMYK document of one opaque raster layer holding `ink` everywhere, at `depth`.
+fn cmyk_doc(ink: [f32; 4], depth: SampleType) -> Document {
+    let mut d = Document::new("c", Size::new(4, 4), ColorMode::Cmyk, depth);
+    let mut l = Layer::raster("bg", d.pixel_format());
+    l.surface_mut().unwrap().fill_rect(Rect::new(0, 0, 4, 4), &[ink[0], ink[1], ink[2], ink[3], 1.0]);
+    d.layers.push(l);
+    d
+}
+
+/// Adjustment layers Photoshop evaluates on the inks composite on the document's own inks, not on
+/// a separation of the RGB composite: exact for Invert, Posterize, Threshold, Brightness/Contrast
+/// and CMYK Levels / Curves (photoshop corpus cmyk8 and cmyk16 oracles), through opacity and an
+/// (unfeathered) mask as linear ink mixes.
+#[test]
+fn cmyk_ink_adjustments_composite_on_the_documents_inks() {
+    use photocraft_color::convert::cmyk_to_rgb;
+    let ink = [0.2, 0.4, 0.6, 0.1];
+    let rgb = |i: [f32; 4]| {
+        let c = cmyk_to_rgb(i);
+        [c[0], c[1], c[2], 1.0]
+    };
+    for depth in [SampleType::U8, SampleType::U16] {
+        let mut d = cmyk_doc(ink, depth);
+        // Stored inks, as the document's surface rounds them.
+        let stored: [f32; 4] = std::array::from_fn(|c| d.layers[0].surface().unwrap().pixel(0, 0)[c]);
+        d.layers.push(Layer::new("inv", LayerContent::Adjustment(Adjustment::Invert)));
+        assert!(close4(px(&d, 1, 1), rgb(stored.map(|v| 1.0 - v))), "{depth:?} invert");
+        // Half opacity and a half mask mix the inks linearly: a quarter of the way.
+        d.layers[1].opacity = 0.5;
+        let mut m = LayerMask::reveal_all();
+        m.surface.fill_rect(Rect::new(0, 0, 4, 4), &[0.5]);
+        d.layers[1].mask = Some(m);
+        let k = 0.5 * d.layers[1].mask.as_ref().unwrap().value(1, 1);
+        assert!(close4(px(&d, 1, 1), rgb(stored.map(|v| v + (1.0 - 2.0 * v) * k))), "{depth:?} mixed");
+        // Brightness/Contrast curves each ink's stored value.
+        let table = adjust::ink_brightness_contrast_lut(25.0, 30.0, true);
+        d.layers[1] = Layer::new("bc", LayerContent::Adjustment(Adjustment::BrightnessContrast { brightness: 25.0, contrast: 30.0, legacy: true }));
+        assert!(close4(px(&d, 1, 1), rgb(stored.map(|v| adjust::ink_through(&table, v)))), "{depth:?} brightness/contrast");
+        // Flattening keeps the adjusted inks exactly, with no trip through RGB.
+        let flat = flatten_to_surface(&d, d.pixel_format(), None);
+        let got = flat.pixel(2, 2);
+        for c in 0..4 {
+            let want = adjust::ink_through(&table, stored[c]);
+            let q = if depth == SampleType::U8 { 255.0 } else { 65535.0 };
+            assert!((got[c] - want).abs() <= 0.5 / q + 1e-6, "{depth:?} flattened ink {c}: {} vs {want}", got[c]);
+        }
+    }
+}
+
+/// Only stacks with ink adjustments take the ink compositor for display: plain CMYK layers keep
+/// the RGB compositor (which the GPU matches), and so does any stack with an adjustment the inks
+/// don't carry or a layer they can't composite.
+#[test]
+fn only_cmyk_stacks_with_ink_adjustments_render_on_their_inks() {
+    let r = Rect::new(0, 0, 4, 4);
+    let mut d = cmyk_doc([0.2, 0.4, 0.6, 0.1], SampleType::U8);
+    assert!(native::render_cmyk(&d, r, 64).is_none(), "plain layers");
+    d.layers.push(Layer::new("inv", LayerContent::Adjustment(Adjustment::Invert)));
+    assert!(native::render_cmyk(&d, r, 64).is_some());
+    let hue = Adjustment::HueSaturation { hue: 30.0, saturation: 0.0, lightness: 0.0, colorize: false, ranges: photocraft_doc::adjust::HueRange::defaults() };
+    d.layers.push(Layer::new("hue", LayerContent::Adjustment(hue)));
+    assert!(native::render_cmyk(&d, r, 64).is_none(), "an adjustment the inks don't carry");
+    d.layers.pop();
+    d.layers[1].blend = BlendMode::Multiply;
+    assert!(native::render_cmyk(&d, r, 64).is_none(), "a blend mode");
+    d.layers[1].blend = BlendMode::Normal;
+    let mut rgb = cmyk_doc([0.2, 0.4, 0.6, 0.1], SampleType::U8);
+    rgb.mode = ColorMode::Rgb;
+    rgb.layers.push(Layer::new("inv", LayerContent::Adjustment(Adjustment::Invert)));
+    assert!(native::render_cmyk(&rgb, r, 64).is_none(), "not a CMYK document");
+    // Tiles render alike whatever their size.
+    let whole = render_tiled(&d, d.bounds(), 64);
+    assert_eq!(render_tiled(&d, d.bounds(), 1).px, whole.px);
+}
+
+/// Groups at full opacity without a mask are inlined: a pass-through group's adjustment reaches
+/// the layers below it, and an isolated group of raster layers composites as its children would.
+/// An isolated group's adjustment (which only sees the group) or a translucent group keeps the
+/// RGB compositor.
+#[test]
+fn cmyk_ink_compositing_inlines_open_groups() {
+    use photocraft_color::convert::cmyk_to_rgb;
+    let r = Rect::new(0, 0, 4, 4);
+    let mut d = cmyk_doc([0.2, 0.4, 0.6, 0.1], SampleType::U16);
+    let stored: [f32; 4] = std::array::from_fn(|c| d.layers[0].surface().unwrap().pixel(0, 0)[c]);
+    let mut g = Layer::group("g", vec![Layer::new("inv", LayerContent::Adjustment(Adjustment::Invert))]);
+    g.blend = BlendMode::PassThrough;
+    d.layers.push(g);
+    let c = cmyk_to_rgb(stored.map(|v| 1.0 - v));
+    assert!(close4(px(&d, 1, 1), [c[0], c[1], c[2], 1.0]), "a pass-through group's Invert reaches the inks below");
+    d.layers[1].blend = BlendMode::Normal;
+    assert!(native::render_cmyk(&d, r, 64).is_none(), "an isolated group's adjustment");
+    d.layers[1].blend = BlendMode::PassThrough;
+    d.layers[1].opacity = 0.5;
+    assert!(native::render_cmyk(&d, r, 64).is_none(), "a translucent group");
+    // An isolated group of raster layers, with an adjustment above it, still composites on the inks.
+    let mut top = Layer::raster("top", d.pixel_format());
+    top.surface_mut().unwrap().fill_rect(Rect::new(0, 0, 2, 4), &[0.9, 0.0, 0.0, 0.0, 1.0]);
+    d.layers[1] = Layer::group("raster", vec![top]);
+    d.layers.push(Layer::new("inv", LayerContent::Adjustment(Adjustment::Invert)));
+    assert!(native::render_cmyk(&d, r, 64).is_some());
+    let c = cmyk_to_rgb(stored.map(|v| 1.0 - v));
+    assert!(close4(px(&d, 3, 1), [c[0], c[1], c[2], 1.0]), "outside the group's layer");
+}
+
 #[test]
 fn cmyk_document_renders_via_rgb() {
     let mut d = Document::new("c", Size::new(2, 2), ColorMode::Cmyk, SampleType::U8);
@@ -1698,6 +1803,43 @@ fn modern_contrast_matches_photoshop() {
     }
 }
 
+/// Over the whole slider range the curve stays monotone and inside 0..1, lowering it undoes
+/// raising it by as much, and odd input never panics.
+#[test]
+fn modern_brightness_is_monotone_and_lowering_inverts_raising() {
+    for b in (-150..=150).step_by(5).map(|b| b as f32) {
+        let mut prev = 0.0f32;
+        for k in 0..=1020 {
+            let v = adjust::modern_brightness(k as f32 / 1020.0, b);
+            assert!((0.0..=1.0).contains(&v) && v >= prev - 1e-6, "brightness {b} at {k}/1020: {v} after {prev}");
+            prev = v;
+        }
+        assert!(
+            (adjust::modern_brightness(1.0, b) - 1.0).abs() < 1e-5 && adjust::modern_brightness(0.0, b).abs() < 1e-5,
+            "brightness {b} pins black and white"
+        );
+        for k in 0..=50 {
+            let x = k as f32 / 50.0;
+            let back = adjust::modern_brightness(adjust::modern_brightness(x, b), -b);
+            assert!((back - x).abs() < 2e-3, "brightness {b}: {x} -> {back}");
+        }
+    }
+    for v in [f32::NAN, f32::INFINITY, -3.0, 7.0] {
+        let _ = adjust::modern_brightness(v, 40.0);
+        let _ = adjust::modern_brightness(0.5, v);
+    }
+    assert_eq!(adjust::modern_lut(0.0, 0.0).len(), 4096);
+    // The table agrees with the curves it samples, lowered (inverted in one pass) or raised.
+    for (b, c) in [(-50.0, 30.0), (-150.0, -50.0), (40.0, 0.0), (0.0, 100.0)] {
+        let t = adjust::modern_lut(b, c);
+        for k in (0..4096).step_by(37) {
+            let x = k as f32 / 4095.0;
+            let want = adjust::modern_contrast(adjust::modern_brightness(x, b), c);
+            assert!((t[k] - want).abs() < 1e-3, "({b}, {c}) at {k}: {} vs {want}", t[k]);
+        }
+    }
+}
+
 #[test]
 fn modern_brightness_matches_photoshop() {
     let cases: [(f32, [u8; 10]); 2] = [(50.0, [0, 22, 44, 88, 132, 171, 203, 228, 246, 255]), (-50.0, [0, 12, 23, 47, 70, 93, 118, 148, 186, 255])];
@@ -1706,8 +1848,48 @@ fn modern_brightness_matches_photoshop() {
         for (i, &x) in xs.iter().enumerate() {
             let got = adjust::modern_brightness(x as f32 / 255.0, b) * 255.0;
             let err = (got - out[i] as f32).abs();
-            // The brightness roll-off is a spline; our fit is close but approximate at the top.
-            assert!(err <= 6.0, "brightness {b} x={x}: got {got:.1} want {} (err {err:.1})", out[i]);
+            // Within about a level of Photoshop's (rounded) output everywhere.
+            assert!(err <= 1.2, "brightness {b} x={x}: got {got:.1} want {} (err {err:.1})", out[i]);
+        }
+    }
+    // Photoshop 27.11's brightness +25 with contrast +30 (photoshop corpus rgb8
+    // brightness-contrast.psd): what the oracle's levels become.
+    let oracle = [
+        (8, 7),
+        (24, 23),
+        (48, 49),
+        (72, 78),
+        (88, 99),
+        (104, 120),
+        (128, 154),
+        (144, 174),
+        (160, 192),
+        (176, 208),
+        (192, 222),
+        (200, 228),
+        (216, 239),
+        (232, 247),
+        (240, 250),
+        (248, 253),
+    ];
+    for (x, want) in oracle {
+        let got = adjust::modern_contrast(adjust::modern_brightness(x as f32 / 255.0, 25.0), 30.0) * 255.0;
+        assert!((got - want as f32).abs() <= 1.0, "+25/+30 x={x}: got {got:.2} want {want}");
+    }
+    // psd-tools' brightnesscontrast_rgb.psd masks four layers to their own columns: the brightness
+    // each applies, read back through its (exact) contrast curve.
+    // (brightness, tolerance in levels, [(input level, Photoshop's output level)])
+    type Measured = (f32, f32, &'static [(u32, f32)]);
+    let measured: [Measured; 4] = [
+        (-95.0, 1.5, &[(24, 13.3), (64, 35.1), (96, 52.9), (128, 69.7), (160, 89.6), (192, 114.4), (224, 151.6)]),
+        (-31.0, 1.5, &[(24, 20.3), (64, 53.4), (96, 79.0), (128, 105.6), (160, 132.3), (192, 161.8), (224, 197.4)]),
+        (23.0, 1.5, &[(24, 27.9), (64, 74.0), (96, 110.9), (128, 147.7), (160, 182.9), (192, 213.7), (224, 239.6)]),
+        (150.0, 6.0, &[(24, 60.3), (64, 162.1), (96, 214.5), (128, 238.4), (160, 248.9)]),
+    ];
+    for (b, tol, points) in measured {
+        for &(x, want) in points {
+            let got = adjust::modern_brightness(x as f32 / 255.0, b) * 255.0;
+            assert!((got - want).abs() <= tol, "brightness {b} x={x}: got {got:.1} want {want}");
         }
     }
     // Endpoints and the zero slider are exact.
@@ -2637,4 +2819,37 @@ fn shape_layer_bounds_includes_vector_bounds_clipped_to_canvas_and_preserves_eff
     let b_fx = layer_bounds(&layer, canvas);
     assert!(!b_fx.is_empty());
     assert!(b_fx.contains_rect(&b));
+}
+
+#[test]
+#[ignore = "timing: cargo test --release -p photocraft-compose modern_lut_timing -- --ignored --nocapture"]
+fn modern_lut_timing() {
+    let t = std::time::Instant::now();
+    for _ in 0..100 {
+        std::hint::black_box(adjust::modern_lut(-50.0, 30.0));
+    }
+    println!("modern_lut(-50, 30): {:?} each", t.elapsed() / 100);
+}
+
+#[test]
+#[ignore = "timing: cargo test --release -p photocraft-compose cmyk_ink_render_timing -- --ignored --nocapture"]
+fn cmyk_ink_render_timing() {
+    // 24 MP CMYK8 photo-sized noise with one adjustment layer: the ink path (Invert) against the
+    // RGB compositor (Exposure, which the inks don't carry).
+    let (w, h) = (6000, 4000);
+    let mut d = Document::new("c", Size::new(w, h), ColorMode::Cmyk, SampleType::U8);
+    let mut l = Layer::raster("bg", d.pixel_format());
+    let data: Vec<f32> = (0..(w * h) as usize)
+        .flat_map(|i| [(i % 251) as f32 / 255.0, (i % 241) as f32 / 255.0, (i % 239) as f32 / 255.0, (i % 97) as f32 / 255.0, 1.0])
+        .collect();
+    l.surface_mut().unwrap().write_region(Rect::new(0, 0, w as i32, h as i32), &data);
+    d.layers.push(l);
+    for adj in [Adjustment::Invert, Adjustment::Exposure { exposure: 0.5, offset: 0.0, gamma: 1.0 }] {
+        d.layers.truncate(1);
+        d.layers.push(Layer::new("adj", LayerContent::Adjustment(adj.clone())));
+        let _ = render(&d, Rect::new(0, 0, 512, 512));
+        let t = std::time::Instant::now();
+        let b = render(&d, d.bounds());
+        println!("{}: {:?} ({} px)", adj.label(), t.elapsed(), b.px.len());
+    }
 }
