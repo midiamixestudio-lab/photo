@@ -3815,6 +3815,7 @@ cameraData	Lens	Lens
 @plural	{warning} (+{n} more brush preset warning)|{warning} (+{n} more brush preset warnings)	{warning} (+{n} fırça ön ayarı uyarısı daha)
 @plural	{what} with {n} warning|{what} with {n} warnings	{what}, {n} uyarı ile
 	Clear Brush Controls	Fırça Denetimlerini Temizle
+	Frequency Separation…	Frekans Ayırma…
 	Reset All Locked Settings	Tüm Kilitli Ayarları Sıfırla
 	Copy Texture to Other Tools	Dokuyu Diğer Araçlara Kopyala
 
