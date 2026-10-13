@@ -50,6 +50,8 @@ use crate::{Limits, RawFormat, ljpeg};
 const CANON_SENSOR_INFO: u16 = 0x00E0;
 const CANON_COLOR_DATA: u16 = 0x4001;
 const CANON_MODEL_ID: u16 = 0x0010;
+/// Canon MakerNote 0x0007: the camera's firmware version string (`Firmware Version 2.1.2`).
+const CANON_FIRMWARE: u16 = 0x0007;
 
 /// Canon model IDs (MakerNote 0x0010) whose raw data starts with a green/blue
 /// row (red in the odd data rows), from observed samples. Only consulted when
@@ -182,6 +184,229 @@ pub(crate) fn masked_black(data: &[u16], width: usize, area: Rect) -> Option<[f3
 }
 
 pub(crate) fn decode(t: &Tiff, limits: &Limits) -> Result<Sensor> {
+    if let Some(sensor) = decode_sraw(t, limits) {
+        return sensor;
+    }
+    decode_cfa(t, limits)
+}
+
+/// Canon sRAW/mRAW (small/medium raw): the lossless JPEG frame carries a 2x1 or 2x2 luma
+/// with 1x1 chroma, decoded through [`crate::ljpeg::decode_sraw`], upsampled and converted
+/// to linear RGB with Canon's fixed matrices and the per-file `sraw_mul` scale (ColourData).
+/// `Some(Err(..))` when the frame is sRAW-shaped but cannot be decoded; `None` for a plain
+/// CFA frame, which the normal decoder handles.
+fn decode_sraw(t: &Tiff, limits: &Limits) -> Option<Result<Sensor>> {
+    let ifds = t.all_ifds();
+    let ifd0 = match t.ifd_at(t.first_ifd, 0) {
+        Some(i) => i,
+        None => return Some(Err(RawError::malformed("CR2 has no IFD0"))),
+    };
+    let raw_off = t.u32_at(12).unwrap_or(0) as usize;
+    let raw = match t.ifd_at(raw_off, 0) {
+        Some(i) => i,
+        None => return Some(Err(RawError::malformed("CR2 raw IFD is missing"))),
+    };
+    let off = match t.tag_uint(&raw, tag::STRIP_OFFSETS) {
+        Some(o) => o as usize,
+        None => return Some(Err(RawError::malformed("CR2 raw data offset missing"))),
+    };
+    let len = t.tag_uint(&raw, tag::STRIP_BYTE_COUNTS).map(|l| l as usize).unwrap_or(t.data.len().saturating_sub(off));
+    let src = match t.bytes(off, len).or_else(|| t.data.get(off..)) {
+        Some(b) => b,
+        None => return Some(Err(RawError::malformed("CR2 raw data lies outside the file"))),
+    };
+    let frame = match ljpeg::frame(src) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+    };
+    if frame.sraw == 0 {
+        return None;
+    }
+    Some(decode_sraw_frame(t, limits, &ifds, ifd0, src, frame))
+}
+
+fn decode_sraw_frame(t: &Tiff, limits: &Limits, ifds: &[crate::tiff::Ifd], ifd0: crate::tiff::Ifd, src: &[u8], frame: ljpeg::Frame) -> Result<Sensor> {
+    let clrs = frame.components + frame.sraw as usize;
+    let (width, height) = (frame.width, frame.height);
+    limits.check(width as u64, height as u64, 6)?;
+    let (_, rows) = ljpeg::decode_sraw(src, usize::MAX)?;
+    let row_len = (width / 2) * clrs;
+    if rows.len() % row_len != 0 {
+        return Err(RawError::malformed("Canon sRAW rows do not match the frame"));
+    }
+    let mcu_rows = rows.len() / row_len;
+    let rows_per_mcu = if clrs == 6 { 2 } else { 1 };
+    if mcu_rows * rows_per_mcu != height {
+        return Err(RawError::malformed("Canon sRAW MCU rows do not match the height"));
+    }
+
+    // Place the samples: per MCU column, `clrs-2` luma values cover a 2x2 (or 2x1) pixel
+    // block; the last two are Cb/Cr, centred at 1<<14 and shared by the block's pixels.
+    let mut rgb = vec![0u16; width * height * 3];
+    let centre = 1i64 << 14;
+    for my in 0..mcu_rows {
+        let row = &rows[my * row_len..(my + 1) * row_len];
+        for mx in 0..width / 2 {
+            let jcol = mx * clrs;
+            let col = mx * 2;
+            for c in 0..clrs - 2 {
+                let dy = (c >> 1) + my * rows_per_mcu;
+                let dx = (c & 1) + col;
+                rgb[(dy * width + dx) * 3] = row[jcol + c];
+            }
+            // The chroma is a signed short; the centre leaves it centred (dcraw's `rp` is short*).
+            let cb = i64::from(row[jcol + clrs - 2] as i16) - centre;
+            let cr = i64::from(row[jcol + clrs - 1] as i16) - centre;
+            for dy in 0..rows_per_mcu {
+                let at = ((my * rows_per_mcu + dy) * width + col) * 3;
+                rgb[at + 1] = cb as i16 as u16;
+                rgb[at + 2] = cr as i16 as u16;
+                rgb[at + 3 + 1] = cb as i16 as u16;
+                rgb[at + 3 + 2] = cr as i16 as u16;
+            }
+        }
+    }
+
+    // Chroma upsample: odd rows (2x2 only) average their neighbours, then odd columns; the
+    // last row/column replicates its neighbour (dcraw's order).
+    if clrs == 6 {
+        for y in (1..height).step_by(2) {
+            for x in 0..width {
+                let at = (y * width + x) * 3;
+                for c in 1..3 {
+                    let above = i32::from(rgb[at - width * 3 + c] as i16);
+                    let below = if y + 1 < height { i32::from(rgb[at + width * 3 + c] as i16) } else { above };
+                    rgb[at + c] = (((above + below + 1) >> 1) as i16) as u16;
+                }
+            }
+        }
+    }
+    for y in 0..height {
+        for x in (1..width).step_by(2) {
+            let at = (y * width + x) * 3;
+            for c in 1..3 {
+                let left = i32::from(rgb[at - 3 + c] as i16);
+                let right = if x + 1 < width { i32::from(rgb[at + 3 + c] as i16) } else { left };
+                rgb[at + c] = (((left + right + 1) >> 1) as i16) as u16;
+            }
+        }
+    }
+
+    // Colour: Canon's fixed YCbCr->RGB matrices (dcraw's canon_sraw_load_raw), per body
+    // generation, with the hue shift newer bodies apply to the chroma.
+    let mn = maker_note(t, ifds);
+    let id = mn.as_ref().and_then(|m| t.tag_uint(m, CANON_MODEL_ID));
+    let new_matrix = matches!(id, Some(0x8000_0218 | 0x8000_0250 | 0x8000_0261 | 0x8000_0281 | 0x8000_0287));
+    let sraw = i64::from(frame.sraw);
+    // dcraw's hue: newer bodies, and the 5D Mark II past firmware 1.0.0.6 (read from the
+    // MakerNote's Firmware Version string), use sraw*2; everything else (sraw+1)*4.
+    let ver = mn.as_ref().and_then(|m| t.tag_ascii(m, CANON_FIRMWARE)).and_then(|f| firmware_version(&f));
+    let newer_hue = id.is_some_and(|i| i >= 0x8000_0281) || (id == Some(0x8000_0218) && ver.is_some_and(|v| v > 1_000_006));
+    let hue = if newer_hue { sraw << 1 } else { (sraw + 1) << 2 };
+    let found_mul = mn.as_ref().and_then(|m| sraw_mul(t, m));
+    let mul = found_mul.unwrap_or([1000, 1000, 1000]);
+    let mut warnings = Vec::new();
+    if found_mul.is_none() {
+        warnings.push("sRAW scale factors not found in ColourData; assumed neutral".to_string());
+    }
+    let chan = |v: i64, k: usize| (v.saturating_mul(i64::from(mul[k])) >> 10).clamp(0, 65535) as u16;
+    for i in 0..rgb.len() / 3 {
+        let px = &mut rgb[i * 3..i * 3 + 3];
+        let y = i64::from(px[0]);
+        let (mut cb, mut cr) = (i64::from(px[1] as i16), i64::from(px[2] as i16));
+        if new_matrix {
+            cb = (cb << 2) + hue;
+            cr = (cr << 2) + hue;
+            px[0] = chan(y + ((50 * cb + 22929 * cr) >> 14), 0);
+            px[1] = chan(y + ((-5640 * cb - 11751 * cr) >> 14), 1);
+            px[2] = chan(y + ((29040 * cb - 101 * cr) >> 14), 2);
+        } else {
+            let y = if id.is_some_and(|i| i < 0x8000_0218) { y - 512 } else { y };
+            px[0] = chan(y + cr, 0);
+            px[2] = chan(y + cb, 2);
+            px[1] = chan(y + ((-778 * cb - (cr << 11)) >> 12), 1);
+        }
+    }
+    warnings.push("Canon sRAW/mRAW: decoded Canon's small/medium raw (its white balance is baked in; the colour is Canon's fixed conversion)".to_string());
+
+    Ok(Sensor {
+        format: RawFormat::Cr2,
+        make: t.tag_ascii(&ifd0, tag::MAKE),
+        model: t.tag_ascii(&ifd0, tag::MODEL),
+        width,
+        height,
+        samples: 3,
+        data: rgb,
+        cfa: None,
+        linearization: None,
+        black: BlackLevels::uniform(0.0),
+        white: [16383.0; 3],
+        active: Rect::new(0, 0, width, height),
+        crop: Rect::new(0, 0, width, height),
+        color: Default::default(),
+        // sRAW's own scale factors bake Canon's conversion; the as-shot white balance from
+        // the ColourData still applies on top, like dcraw -w.
+        camera_wb: mn.as_ref().and_then(|m| as_shot_wb(t, m)),
+        orientation: crate::tiff::orientation(t.tag_uint(&ifd0, tag::ORIENTATION)),
+        baseline_exposure: 0.0,
+        gain_maps: Vec::new(),
+        tone_curve: Vec::new(),
+        warnings,
+    })
+}
+
+/// `1.2.3` from a firmware string as dcraw's `(v0*1000 + v1)*1000 + v2` integer.
+fn firmware_version(s: &str) -> Option<i64> {
+    let mut nums: Vec<i64> = Vec::new();
+    let mut cur = String::new();
+    for ch in s.chars().chain(['.']) {
+        if ch.is_ascii_digit() {
+            cur.push(ch);
+        } else if !cur.is_empty() {
+            nums.push(cur.parse().ok()?);
+            cur.clear();
+            if nums.len() == 3 {
+                break;
+            }
+        }
+    }
+    match nums.as_slice() {
+        [a, b, c] => Some((a * 1000 + b) * 1000 + c),
+        _ => None,
+    }
+}
+
+/// The per-file sRAW scale factors from the ColourData block (dcraw walks records of 10
+/// shorts after the white balance, looking for the one whose G is 1170).
+fn sraw_mul(t: &Tiff, mn: &Ifd) -> Option<[u32; 3]> {
+    let e = mn.get(CANON_COLOR_DATA)?;
+    let bytes = e.unit().checked_mul(e.count as usize)?;
+    let word = |off: usize| -> Option<u32> {
+        let at = off.checked_mul(2)?.checked_add(e.at)?;
+        (at.checked_add(2)? <= e.at.checked_add(bytes)?).then(|| t.u16_at(at)).flatten().map(u32::from)
+    };
+    // dcraw's walk: the white balance sits `skip` bytes in (per block length), and the
+    // records of 5 words follow it directly — [skip, R, G, G2, B] — until the one whose
+    // G is 1170 (dcraw's `sraw_mul[c ^ (c >> 1)]` reads R, G, B from those slots).
+    let words = bytes / 2;
+    let skip: usize = match bytes {
+        x if x == 582 * 2 => 50,
+        x if x == 653 * 2 => 68,
+        x if x == 5120 * 2 => 142,
+        _ => 126,
+    };
+    let mut i = skip / 2 + 4;
+    while i + 4 < words {
+        let (r, g, b) = (word(i + 1)?, word(i + 2)?, word(i + 4)?);
+        if g == 1170 {
+            return Some([r, g, b]);
+        }
+        i += 5;
+    }
+    None
+}
+
+fn decode_cfa(t: &Tiff, limits: &Limits) -> Result<Sensor> {
     let ifds = t.all_ifds();
     let ifd0 = t.ifd_at(t.first_ifd, 0).ok_or_else(|| RawError::malformed("CR2 has no IFD0"))?;
     let raw_off = t.u32_at(12).unwrap_or(0) as usize;

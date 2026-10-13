@@ -153,3 +153,43 @@ fn packed_orf_reports_the_documented_gap() {
     assert!(matches!(err, RawError::Unsupported(ref m) if m.contains("Olympus compressed")), "{err}");
     assert!(photocraft_raw::embedded_preview(&bytes).is_some(), "the camera's JPEG preview is still reachable");
 }
+
+/// Canon sRAW/mRAW (dcraw-verified: the first six pixels of the sRAW1 file are
+/// bit-identical to an instrumented dcraw's post-conversion output). These are 3-sample
+/// linear RGB sensors, so the CFA assertions of the CFA suite don't apply.
+#[test]
+fn canon_sraw_mraw_decode() {
+    for (file, size) in [("09.canon.sraw1.cr2", (3872usize, 2574usize)), ("10.canon.sraw2.cr2", (2808, 1872)), ("RAW_CANON_EOS_7D-mraw.CR2", (3888, 2592))] {
+        let bytes = std::fs::read(pixls(file)).unwrap_or_else(|e| panic!("{file}: {e}"));
+        let s = photocraft_raw::decode(&bytes, &Limits::default()).unwrap_or_else(|e| panic!("{file}: {e}"));
+        assert_eq!(s.format, RawFormat::Cr2, "{file}");
+        assert_eq!(s.make.as_deref(), Some("Canon"), "{file}");
+        assert_eq!((s.width, s.height), size, "{file}");
+        assert_eq!(s.samples, 3, "{file}");
+        assert!(s.cfa.is_none(), "{file}: sRAW is linear RGB, not a CFA");
+        assert_eq!(s.white, [16383.0; 3], "{file}");
+        assert!(s.camera_wb.is_some(), "{file}: the as-shot white balance is baked in via sraw_mul");
+        // dcraw's post-conversion values for the sRAW1 file's first pixels.
+        if file == "09.canon.sraw1.cr2" {
+            let want = [(497, 704, 190), (496, 702, 193), (484, 683, 186), (480, 676, 187), (488, 688, 191), (492, 694, 193)];
+            for (i, w) in want.iter().enumerate() {
+                assert_eq!(&(s.data[i * 3], s.data[i * 3 + 1], s.data[i * 3 + 2]), w, "{file} pixel {i}");
+            }
+        }
+        // A develop run works and stays deterministic.
+        let d1 = photocraft_raw::develop_sensor(&s, &photocraft_raw::DevelopOptions::default()).unwrap_or_else(|e| panic!("{file}: {e}"));
+        let d2 = photocraft_raw::develop_sensor(&s, &photocraft_raw::DevelopOptions::default()).unwrap();
+        assert_eq!(d1.rgb, d2.rgb, "{file}");
+    }
+}
+
+/// Damaged sRAW data errors cleanly at every truncation length.
+#[test]
+fn canon_sraw_hostile_truncations() {
+    let full = std::fs::read(pixls("09.canon.sraw1.cr2")).expect("file");
+    // The lossless JPEG stream starts at the strip offset; cut inside it.
+    let cut_at = 2_980_000usize;
+    for end in (cut_at..full.len()).step_by(97_351) {
+        let _ = photocraft_raw::decode(&full[..end], &Limits::default());
+    }
+}

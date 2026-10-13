@@ -251,6 +251,9 @@ pub const PIXLS_BASE: &str = "https://raw.pixls.us/data/";
 /// (url path, file name in `corpus/pixls`)
 pub const PIXLS_FILES: &[(&str, &str)] = &[
     ("Canon/PowerShot%20SX50%20HS/IMG_4059.CR2", "IMG_4059.CR2"),
+    ("Canon/EOS%205D%20Mark%20II/09.canon.sraw1.cr2", "09.canon.sraw1.cr2"),
+    ("Canon/EOS%205D%20Mark%20II/10.canon.sraw2.cr2", "10.canon.sraw2.cr2"),
+    ("Canon/EOS%207D/RAW_CANON_EOS_7D-mraw.CR2", "RAW_CANON_EOS_7D-mraw.CR2"),
     ("Canon/PowerShot%20SX50%20HS/CRW_4061.DNG", "CRW_4061.DNG"),
     ("Nikon/D3/JD1_8203.NEF", "JD1_8203.NEF"),
     ("Sony/DSC-RX0/DSC00009.ARW", "DSC00009.ARW"),

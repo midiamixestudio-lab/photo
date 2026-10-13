@@ -20,6 +20,11 @@ pub(crate) struct Frame {
     pub width: usize,
     pub height: usize,
     pub components: usize,
+    /// Canon sRAW/mRAW marker: `(h*v - 1) & 3` of the first component — 0 for a plain
+    /// frame, 1 for a 2x1 luma (sRAW2) and 3 for a 2x2 luma (sRAW1/mRAW). A scan then
+    /// carries `components + sraw` interleaved values per MCU column: the luma samples
+    /// chained through each other, then Cb and Cr.
+    pub sraw: u8,
 }
 
 impl Frame {
@@ -94,7 +99,9 @@ impl Huffman {
             }
             let d: i32 = match s {
                 0 => 0,
-                16 => 32768,
+                // T.81 H.1.2.2: in lossless mode the 16-bit category is the fixed value
+                // -32768 (dcraw agrees for every non-ancient-DNG file).
+                16 => -32768,
                 1..=15 if len + s <= LOOKUP_BITS => {
                     let v = ((idx as u32 >> (LOOKUP_BITS - len - s)) & ((1 << s) - 1)) as i32;
                     if v < (1 << (s - 1)) { v - (1 << s) + 1 } else { v }
@@ -335,14 +342,26 @@ fn parse(data: &[u8]) -> Result<Parsed<'_>> {
                     return Err(RawError::malformed(format!("unsupported SOF3 ({precision}-bit, {width}x{height}, {nf} components)")));
                 }
                 comp_ids.clear();
+                // Canon sRAW/mRAW: the first component's sampling is 2x1 or 2x2, the rest
+                // are 1x1 (dcraw's `sraw = (h*v - 1) & 3`); anything else stays unsupported.
+                let mut sraw = 0u8;
                 for c in 0..nf {
                     let s = &seg[6 + 3 * c..9 + 3 * c];
-                    if s[1] != 0x11 {
+                    let (h, v) = (s[1] >> 4, s[1] & 0x0F);
+                    if c == 0 {
+                        if matches!((h, v), (1, 1)) {
+                            sraw = 0;
+                        } else if matches!((h, v), (2, 1) | (2, 2)) {
+                            sraw = (h * v - 1) & 3;
+                        } else {
+                            return Err(RawError::unsupported("lossless JPEG with subsampled components"));
+                        }
+                    } else if (h, v) != (1, 1) {
                         return Err(RawError::unsupported("lossless JPEG with subsampled components"));
                     }
                     comp_ids.push(s[0]);
                 }
-                frame = Some(Frame { precision, width, height, components: nf });
+                frame = Some(Frame { precision, width, height, components: nf, sraw });
             }
             0xC0..=0xC2 => return Err(RawError::unsupported("lossy (DCT) JPEG compressed raw data")),
             0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF => return Err(RawError::unsupported("hierarchical or arithmetic-coded JPEG")),
@@ -401,6 +420,9 @@ fn parse(data: &[u8]) -> Result<Parsed<'_>> {
 pub(crate) fn decode(data: &[u8], max_samples: usize) -> Result<(Frame, Vec<u16>)> {
     let p = parse(data)?;
     let f = p.frame;
+    if f.sraw > 0 {
+        return Err(RawError::unsupported("lossless JPEG with subsampled components"));
+    }
     let total = f
         .samples()
         .filter(|&n| n <= max_samples)
@@ -498,6 +520,105 @@ pub(crate) fn decode(data: &[u8], max_samples: usize) -> Result<(Frame, Vec<u16>
     Ok((f, out))
 }
 
+/// Decodes a Canon sRAW/mRAW lossless JPEG stream: MCU columns of `components + sraw`
+/// interleaved values (the luma samples chained through each other, then Cb and Cr — the
+/// layout dcraw decodes for Canon's small/medium raws). Returns the frame and the raw
+/// interleaved rows, `width/2 * (components + sraw)` values per MCU row.
+pub(crate) fn decode_sraw(data: &[u8], max_samples: usize) -> Result<(Frame, Vec<u16>)> {
+    let p = parse(data)?;
+    let f = p.frame;
+    if f.sraw == 0 {
+        return Err(RawError::unsupported("lossless JPEG with 1x1 sampling is not Canon sRAW"));
+    }
+    let clrs = f.components + f.sraw as usize;
+    if clrs != 4 && clrs != 6 {
+        return Err(RawError::unsupported(format!("Canon sRAW scan with {clrs} interleaved values")));
+    }
+    if f.width % 2 != 0 {
+        return Err(RawError::malformed("Canon sRAW width is odd"));
+    }
+    let cols = f.width / 2;
+    let rows = if clrs == 6 { f.height / 2 } else { f.height };
+    if clrs == 6 && f.height % 2 != 0 {
+        return Err(RawError::malformed("Canon sRAW height is odd"));
+    }
+    let total = cols
+        .checked_mul(rows)
+        .and_then(|n| n.checked_mul(clrs))
+        .filter(|&n| n <= max_samples)
+        .ok_or_else(|| RawError::LimitExceeded(format!("Canon sRAW frame {}x{}x{}", f.width, f.height, clrs)))?;
+    if p.entropy.len().saturating_mul(8) < total / 2 {
+        return Err(RawError::malformed("lossless JPEG data is truncated"));
+    }
+    let row_len = cols * clrs;
+    // Restart intervals count MCU rows (the halved width), as dcraw's `jrow*wide` check.
+    if p.restart != 0 && p.restart % cols != 0 {
+        return Err(RawError::unsupported("lossless JPEG restart interval that is not whole rows"));
+    }
+    let rows_per_interval = if p.restart == 0 { usize::MAX } else { p.restart / cols };
+    let mut out = vec![0u16; total];
+    let mut bits = Bits::new(p.entropy);
+    let sraw = f.sraw as usize;
+    let initial = 1i32 << (f.precision - p.point_transform - 1);
+    let pred = p.predictor;
+    let mut vpred = [initial; 6];
+    let mut interval_row = 0usize;
+    for y in 0..rows {
+        if interval_row == rows_per_interval {
+            bits.restart()?;
+            vpred = [initial; 6];
+            interval_row = 0;
+        }
+        let (prev, cur) = if y == 0 {
+            let (_, cur) = out.split_at_mut(0);
+            (&[][..], &mut cur[..row_len])
+        } else {
+            let (a, b) = out.split_at_mut(y * row_len);
+            (&a[(y - 1) * row_len..], &mut b[..row_len])
+        };
+        let mut spred = 0i32;
+        for col in 0..cols {
+            for c in 0..clrs {
+                // dcraw's table assignment: the luma chain (values 0..=sraw) shares the
+                // first scan component's table, Cb/Cr use the chroma component's (the last
+                // scan component's) table.
+                let h = if c <= sraw { &p.tables[0] } else { p.tables.last().unwrap_or(&p.tables[0]) };
+                let diff = bits.diff(h)?;
+                // Canon sRAW prediction (dcraw ljpeg_row): the luma samples chain through the
+                // previous value of the MCU; Cb/Cr use the normal predictors.
+                let mut px = if c <= sraw && (col | c) != 0 {
+                    spred
+                } else if col > 0 {
+                    i32::from(cur[col * clrs + c - clrs])
+                } else {
+                    vpred[c] += diff;
+                    vpred[c] - diff
+                };
+                if y > 0 && col > 0 {
+                    let above = i32::from(prev[col * clrs + c]);
+                    let above_left = i32::from(prev[col * clrs + c - clrs]);
+                    px = match pred {
+                        1 => px,
+                        2 => above,
+                        3 => above_left,
+                        4 => px + above - above_left,
+                        5 => px + ((above - above_left) >> 1),
+                        6 => above + ((px - above_left) >> 1),
+                        _ => (px + above) >> 1,
+                    };
+                }
+                let v = (px + diff) as u16;
+                cur[col * clrs + c] = v;
+                if c <= sraw {
+                    spred = i32::from(v);
+                }
+            }
+        }
+        interval_row += 1;
+    }
+    Ok((f, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,7 +647,7 @@ mod tests {
                     let v = samples(w * h * comps, precision, u64::from(predictor) * 31 + comps as u64);
                     let j = lj92_encode(&v, w, h, comps, precision, predictor, None);
                     let (f, out) = decode(&j, usize::MAX).unwrap();
-                    assert_eq!(f, Frame { precision, width: w, height: h, components: comps });
+                    assert_eq!(f, Frame { precision, width: w, height: h, components: comps, sraw: 0 });
                     assert_eq!(out, v, "P={precision} pred={predictor} comps={comps}");
                 }
             }
