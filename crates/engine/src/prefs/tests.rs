@@ -55,9 +55,9 @@ fn appearance_defaults_and_legacy_theme_migrate() {
     // New users keep Photoshop's default; following the system is opt-in.
     assert_eq!(p.interface.appearance_mode, AppearanceMode::Dark);
     assert_eq!(p.interface.dark_theme, DarkTheme::ProMedium);
-    assert_eq!(p.interface.light_theme, LightTheme::StudioLight);
+    assert_eq!(p.interface.light_theme, LightTheme::ProLight);
     for (theme, mode, dark, light) in
-        [("pro", AppearanceMode::Dark, DarkTheme::Pro, LightTheme::StudioLight), ("classic", AppearanceMode::Light, DarkTheme::ProMedium, LightTheme::Classic)]
+        [("pro", AppearanceMode::Dark, DarkTheme::Pro, LightTheme::ProLight), ("classic", AppearanceMode::Light, DarkTheme::ProMedium, LightTheme::Classic)]
     {
         let mut s = Session::new();
         s.load_prefs_json(&json!({"interface": {"theme": theme}}).to_string()).unwrap();
@@ -612,4 +612,14 @@ fn ruler_units_round_to_their_own_decimal_places() {
     assert_eq!(r.format(1500.0, 300.0, 1500.0), "12.7");
     let r = super::UnitsAndRulers { rulers: Unit::Inches, ..Default::default() };
     assert_eq!(r.format(100.0, 300.0, 1500.0), "0.333");
+}
+
+/// #3296: like Photoshop, "Use Shift Key for Tool Switch" is on by default; a stored choice wins.
+#[test]
+fn shift_key_tool_switch_is_on_by_default_and_a_stored_false_is_kept() {
+    assert!(Preferences::default().tools.use_shift_key_for_tool_switch);
+    let missing: Tools = serde_json::from_value(json!({"showTooltips": false})).unwrap();
+    assert!(missing.use_shift_key_for_tool_switch, "a settings file without the key gets the new default");
+    let stored: Tools = serde_json::from_value(json!({"useShiftKeyForToolSwitch": false})).unwrap();
+    assert!(!stored.use_shift_key_for_tool_switch);
 }

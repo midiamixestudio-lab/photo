@@ -528,6 +528,20 @@ impl GpuCanvas {
         damage: Option<photocraft_geom::Rect>,
         display: Option<&photocraft_engine::display_color::CanvasDisplay>,
     ) -> Refresh {
+        self.refresh_with(key, doc, damage, display, false)
+    }
+
+    /// [`GpuCanvas::refresh`], except that with `defer`, a refresh of at least [`DEFER_PX`] the
+    /// CPU compositor would draw is left to the caller (`background_redraw`): the texture is made
+    /// ready (keeping what it shows when it already fits) and the kind is [`REFRESH_DEFERRED`].
+    pub fn refresh_with(
+        &self,
+        key: u64,
+        doc: &photocraft_doc::Document,
+        damage: Option<photocraft_geom::Rect>,
+        display: Option<&photocraft_engine::display_color::CanvasDisplay>,
+        defer: bool,
+    ) -> Refresh {
         if let Some(f) = self.fault() {
             // Nothing reaches the GPU any more; the app switches to the CPU canvas.
             return Refresh { kind: "lost", fallback: Some(f.to_string()), ..Default::default() };
@@ -564,6 +578,12 @@ impl GpuCanvas {
             }
             Err(e) => out.fallback = Some(e.0),
         }
+        let px = region.width() as u64 * region.height() as u64;
+        if defer && px >= DEFER_PX && self.prepare_texture(key, doc).is_some() {
+            out.kind = REFRESH_DEFERRED;
+            out.px = px;
+            return out;
+        }
         if let Some(r) = damage {
             if r.is_empty() {
                 out.kind = "rect";
@@ -591,22 +611,8 @@ impl GpuCanvas {
     /// never needs a full-size float composite or texture-format copy in memory.
     pub fn upload_composite(&self, key: u64, doc: &photocraft_doc::Document, display: Option<&photocraft_engine::display_color::CanvasDisplay>) {
         let size = [doc.size.width, doc.size.height];
-        if size[0] == 0 || size[1] == 0 || !self.health.is_ok() {
-            return;
-        }
-        let format = self.format_for(doc.depth, size);
+        let Some(format) = self.prepare_texture(key, doc) else { return };
         let (device, queue) = (&self.rs.device, &self.rs.queue);
-        {
-            let mut renderer = self.rs.renderer.write();
-            let Some(res) = renderer.callback_resources.get_mut::<Resources>() else { return };
-            if res.docs.get(&key).is_none_or(|d| d.size != size || d.format != format) {
-                let Some(tex) = DocTextures::new(device, res, size, self.tile, format) else {
-                    res.docs.remove(&key);
-                    return;
-                };
-                res.docs.insert(key, tex);
-            }
-        }
         let mut rgba = Vec::new();
         let _ = photocraft_compose::render_bands(doc, doc.bounds(), 0, |band| -> Result<(), ()> {
             if !self.health.is_ok() {
@@ -633,18 +639,38 @@ impl GpuCanvas {
         }
     }
 
+    /// Make sure document `key` has a display texture of `doc`'s size and format, keeping the one
+    /// it has when that fits. Returns its format, or `None` when it can't be created.
+    pub fn prepare_texture(&self, key: u64, doc: &photocraft_doc::Document) -> Option<wgpu::TextureFormat> {
+        let size = [doc.size.width, doc.size.height];
+        if size[0] == 0 || size[1] == 0 || !self.health.is_ok() {
+            return None;
+        }
+        let format = self.format_for(doc.depth, size);
+        let mut renderer = self.rs.renderer.write();
+        let res = renderer.callback_resources.get_mut::<Resources>()?;
+        if res.docs.get(&key).is_none_or(|d| d.size != size || d.format != format) {
+            let Some(tex) = DocTextures::new(&self.rs.device, res, size, self.tile, format) else {
+                res.docs.remove(&key);
+                return None;
+            };
+            res.docs.insert(key, tex);
+        }
+        Some(format)
+    }
+
     /// Free textures, display LUTs and their signatures for documents not in `live`.
     pub fn retain(&self, live: &[u64]) {
         let mut renderer = self.rs.renderer.write();
         let Some(res) = renderer.callback_resources.get_mut::<Resources>() else { return };
         if res.docs.keys().any(|k| !live.contains(k)) {
-            let gone: Vec<u64> = res.docs.keys().filter(|k| !live.contains(k)).copied().collect();
-            if let Some(c) = res.compositor.as_mut() {
-                for k in &gone {
-                    c.forget_doc(photocraft_doc::DocId(*k));
-                }
-            }
             res.docs.retain(|k, _| live.contains(k));
+        }
+        // Everything the compositor holds for documents that aren't open, also when their
+        // texture entry was dropped earlier (over budget, a failed render), which used to leave
+        // their pages and effect maps resident after closing (#4529).
+        if let Some(c) = res.compositor.as_mut() {
+            c.retain_docs(|d| live.contains(&d.0));
         }
         // LUTs and identity-transform signatures can outlive document textures. Prune both,
         // or a preserved-ID reopen can skip rebuilding a missing LUT.
@@ -762,6 +788,16 @@ fn texture_buffer<'a>(
         Some(d) => d.texture_buffer(buf),
         None => std::borrow::Cow::Borrowed(buf),
     }
+}
+
+/// A CPU composite `buf` as texels of a `format` canvas texture, in `display`'s encoding: what
+/// [`GpuCanvas::upload_rect`] takes. Runs anywhere (a redraw's worker converts its own pieces).
+pub fn display_texels(
+    format: wgpu::TextureFormat,
+    display: Option<&photocraft_engine::display_color::CanvasDisplay>,
+    buf: &photocraft_compose::Buffer,
+) -> Vec<u8> {
+    texels(format, &texture_buffer(display, buf).px)
 }
 
 /// What a [`GpuCanvas::refresh`] did.
@@ -1151,6 +1187,13 @@ pub const OVER_CANVAS_BUDGET: &str = "the canvas exceeds the GPU texture budget;
 /// was created, and the caller draws the CPU canvas instead.
 pub const REFRESH_OVER_BUDGET: &str = "over-budget";
 
+/// [`Refresh::kind`] of a CPU refresh left to the caller ([`GpuCanvas::refresh_with`]).
+pub const REFRESH_DEFERRED: &str = "deferred";
+
+/// The smallest CPU refresh (pixels) [`GpuCanvas::refresh_with`] defers: below it, the
+/// synchronous composite takes a fraction of a second even with many layers.
+pub const DEFER_PX: u64 = 1 << 22;
+
 /// GPU bytes one document's display texture set (every tile and mip level) may take: a quarter
 /// of physical memory (`ram`; 16 GB assumed when unknown), at least [`MIN_GPU_BUDGET`]. The set
 /// covers the whole canvas at full resolution, so its size follows the declared canvas, not the
@@ -1210,7 +1253,12 @@ fn detect_physical_memory() -> Option<u64> {
     String::from_utf8(out.stdout).ok()?.trim().parse().ok()
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "freebsd")))]
+#[cfg(windows)]
+fn detect_physical_memory() -> Option<u64> {
+    winsafe::GlobalMemoryStatusEx().map(|m| m.ullTotalPhys).ok().filter(|b| *b > 0)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "freebsd", windows)))]
 fn detect_physical_memory() -> Option<u64> {
     None
 }
@@ -2158,6 +2206,15 @@ mod tests {
         assert_eq!(memory_budget(8 * G, 10 * G, Some(48 * G)), MIN_GPU_BUDGET);
         assert_eq!(memory_budget(64 * G, 0, None), 4 * G);
         assert!(physical_memory().is_none_or(|b| b >= 256 << 20));
+    }
+
+    /// Windows used to report no RAM at all, so the budget assumed 16 GB on every machine.
+    #[cfg(windows)]
+    #[test]
+    fn windows_reports_installed_ram() {
+        let ram = detect_physical_memory().unwrap_or(0);
+        assert!(ram >= 256 << 20, "{ram} bytes");
+        assert!(ram < 1 << 50, "{ram} bytes");
     }
 
     #[test]

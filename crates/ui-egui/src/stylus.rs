@@ -102,6 +102,13 @@ struct FeedState {
 #[derive(Clone, Debug, Default)]
 pub struct StylusFeed(Arc<Mutex<FeedState>>);
 
+pub(crate) fn pen_hold_is_no_right_click(ctx: &egui::Context, pen_down: bool) {
+    let want = if pen_down { f64::INFINITY } else { egui::InputOptions::default().max_click_duration };
+    if ctx.options(|o| o.input_options.max_click_duration) != want {
+        ctx.options_mut(|o| o.input_options.max_click_duration = want);
+    }
+}
+
 impl StylusFeed {
     /// Convenience for native tablet monitors that only provide pen samples.
     /// `Some` marks the slot as a pen; `None` clears the sample and returns the source to mouse.
