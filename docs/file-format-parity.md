@@ -1,6 +1,6 @@
 # File-format parity
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (palette PNGs open in Indexed Color mode, #4804; earlier: CMYK Invert, Posterize and Threshold on the inks; 16-bit Lab Invert; Photoshop-oracle floor 145/258; `.atn` import maps 112 events; DDS textures open, #1327; DPX read and write, #1049; #2465 fixed: CS2 placed layers with only a `PlLd` block open their contents; Photoshop Actions `.atn` read and write; `.shc` contour files read and write; earlier the same day: indexed BMP palette mode; Save keeps a JPEG's quality and a WebP's encoding) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (palette PNGs open in Indexed Color mode, #4804; earlier: PDF write one flattened page via Save As / Save a Copy / CLI, #3401; CMYK Invert, Posterize and Threshold on the inks; 16-bit Lab Invert; Photoshop-oracle floor 145/258; `.atn` import maps 112 events; DDS textures open, #1327; DPX read and write, #1049; #2465 fixed: CS2 placed layers with only a `PlLd` block open their contents; Photoshop Actions `.atn` read and write; `.shc` contour files read and write; earlier the same day: indexed BMP palette mode; Save keeps a JPEG's quality and a WebP's encoding) · **Target:** Adobe Photoshop 2026
 
 Every format Photoshop 2026 (27.11.0) reads or writes, with PhotoCraft's support, fidelity and
 tests. Photoshop's list comes from its `Info.plist` `CFBundleDocumentTypes`, the PiPL read/write
@@ -38,7 +38,7 @@ XL are missing (gap G10). Remaining: 300–500 h including PSD fidelity.
 | Portable Bit Map (PBM/PGM/PPM/PNM/PFM/PAM) | R/W | yes | yes | 8/16/32f |
 | FITS | R/W (FITS Liberator plug-in) | yes | yes | 8/16/32f gray or RGB, header cards kept; no fpack, no debayer |
 | Targa | R/W | yes | yes | 8-bit |
-| Photoshop PDF | R/W | no (#2541) | raster only (print, artboards to PDF) | No vector/text PDF, no multi-page save, no PDF presentation (FILE-215-10) |
+| Photoshop PDF | R/W | no (#2541) | yes, one flattened page (Save As / Save a Copy / CLI, #3401; also print and artboards-to-PDF) | No vector/text PDF, no multi-page save, no PDF presentation, layers are not preserved (FILE-215-10); read still missing (#2541) |
 | Photoshop EPS, DCS 1.0/2.0, EPS TIFF/PICT preview | R/W | no | no | |
 | Generic EPS / AI | R (rasterize) | no | no | |
 | SVG | R (rasterize) | yes, as editable shape layers or a vector smart object | no | Better than Photoshop for editing; gradients approximated (FILE-215-9) |
@@ -153,4 +153,5 @@ remaining gaps in #1606 stay tracked with per-sample corpus ceilings.
 | 2026-10-12 | minor | Palette BMPs open in Indexed Color mode (#3802) |
 | 2026-10-12 | minor | Save writes a JPEG at its own estimated quality and a WebP lossy or lossless as opened (#2399) |
 | 2026-10-11 | minor | D5100 image area and fitted-look preservation in Camera Raw tuning |
+| 2026-10-11 | minor | PDF write now covers Save As / Save a Copy / CLI (`io::pdf::export`, #3401): one flattened RGB/Gray/CMYK page at the document's print size with the embedded profile. Read (#2541), multi-page save, PDF presentation, vector/text output still open
 | 2026-10-10 | major | First version: Photoshop 2026 27.11.0's formats from its bundle, against our codecs; Affinity notes moved from `roadmap.md` |
