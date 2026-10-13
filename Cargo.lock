@@ -4360,6 +4360,7 @@ name = "photocraft-engine"
 version = "0.8.2"
 dependencies = [
  "blake3",
+ "chrono",
  "craft-print",
  "exr",
  "flate2",

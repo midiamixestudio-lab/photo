@@ -1014,6 +1014,10 @@
 	Create new pattern from the selection	Crear un motivo nuevo a partir de la selección
 	Create new shape from the current path	Crear una forma nueva a partir del trazado actual
 	Create new snapshot	Crear una instantánea nueva
+	From:	De:
+	Full Document	Documento completo
+	Merged Layers	Capas combinadas
+	New Snapshot	Instantánea nueva
 	Create new tool preset	Crear un ajuste preestablecido de herramienta nuevo
 	Crop Factor	Factor de recorte
 	Ctrl	Ctrl
@@ -2757,6 +2761,11 @@ curves	Smooth	Suavizar
 	Click to place · Alt-click or drag off-canvas to remove	Clic para colocar · Alt-clic o arrastrar fuera del lienzo para quitar
 	No document open	Ningún documento abierto
 	{n} of {max} sample points	{n} de {max} puntos de muestreo
+
+# History panel › History Options… (#2966)
+	History Options…	Opciones de historia…
+	Allow Non-Linear History	Permitir historia no lineal
+	Make Layer Visibility Changes Undoable	Permitir deshacer los cambios de visibilidad de capas
 # Print dialog (#2697)
 	Emulsion Down	Emulsión hacia abajo
 	Functions	Funciones
@@ -2822,3 +2831,6 @@ curves	Smooth	Suavizar
 @plural	{n} action|{n} actions	{n} acción|{n} acciones
 	Auto Add/Delete	Añadir/eliminar automáticamente
 	ICO is limited to 256 × 256 pixels	ICO está limitado a 256 × 256 píxeles
+	Automatically Create First Snapshot	Crear automáticamente la primera instantánea
+	Automatically Create New Snapshot When Saving	Crear automáticamente una instantánea nueva al guardar
+	Show New Snapshot Dialog by Default	Mostrar el cuadro de diálogo Instantánea nueva de forma predeterminada
