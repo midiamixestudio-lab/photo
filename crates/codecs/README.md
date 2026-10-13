@@ -47,6 +47,7 @@ let out = encode(&img, Format::Tiff, &EncodeOptions::default())?;
 | Radiance HDR | yes | yes | F32 | RGB | no | no | no | no | no | no | yes (RGBE) | `image` |
 | FITS | yes | yes | U8, U16, F32 | Gray, RGB | no | no | no | no | no | yes (header cards) | no | built in |
 | DPX | yes | yes | U8, U16 (10/12-bit code values read and written exactly through U16) | Gray, RGB, RGBA | yes | no | no | no | no | DPX header fields only (creator, project, copyright, creation time, transfer, colorimetric, frame position, frame rate, time code) | no | built in |
+| Pixar | yes | **no** | U8 | Gray, GrayA, RGB, RGBA | yes | no | no | no | no | no | n/a | built in |
 | AVIF | **no** | only with feature `avif` | U8 | RGB, RGBA | yes | no | no | no | no | no | yes | `image` + `ravif` |
 | HEIF/HEIC | with feature `heif` | **no** | U8, U16 (10/12-bit decodes to U16) | RGB, RGBA | yes (auxiliary alpha) | yes (`colr` prof) | yes | yes | no | no | n/a | `heic-rs` |
 
@@ -94,6 +95,13 @@ embedded table (and a PNG's transparent entry) so `photocraft-io` can open them 
   U8 and 16 otherwise), packing 1 for 10 and 12 bits; gray with alpha is written as luma.
   Other descriptors, signed or run-length-encoded data and other bit depths return
   `CodecError::Unsupported` naming the field. Cineon (`.cin`) is not supported.
+
+* **Pixar (read-only).** The 1986 Pixar Image Computer format: the 512-byte little-endian header
+  (magic `80 E8 00 00`), the tile pointer table, and uncompressed 8-bit tiles, read from the
+  published layout. One to four channels (a R/G/B bitmask with optional A, or a single grey
+  channel), one tile or a grid. A bad magic, a tile that runs past the file or is shorter than its
+  pixels, or a partial channel bitmask returns `CodecError::Unsupported`/`Malformed` rather than
+  panicking. There is no Pixar writer; save as PNG.
 
 * **Camera raw files** (DNG, CR2, NEF, ARW… which are TIFF-structured) are recognised and refused
   with `CodecError::Unsupported`: they are sensor data, not flat images. `photocraft-raw` decodes

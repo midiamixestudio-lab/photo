@@ -33,6 +33,8 @@ pub enum Format {
     Fits,
     /// DPX (SMPTE 268M Digital Picture Exchange): luma, RGB or RGBA film and video frames.
     Dpx,
+    /// Pixar image (`.pxr`): 8-bit tiled grey/RGB/RGBA, read-only.
+    Pixar,
 }
 
 /// What a format can hold **and** what this crate reads/writes for it.
@@ -65,6 +67,7 @@ pub struct FormatCaps {
 /// The test-suite asserts that every other enabled format is read+write.
 pub const ASYMMETRIC_EXCEPTIONS: &[(Format, &str)] = &[
     (Format::Xpm, "XPM is a legacy Unix icon interchange format. Reading existing XPM icons is supported; writing modern image assets should use PNG instead."),
+    (Format::Pixar, "Pixar (.pxr) is supported for opening legacy Pixar Image Computer pictures; this crate has no Pixar writer, so save as PNG instead."),
     (
         Format::Pcx,
         "PCX is supported for opening legacy paint and clipart assets. New files should use PNG; writing obsolete indexed and planar variants is intentionally not provided.",
@@ -95,7 +98,7 @@ const ALL_LAYOUTS: &[ChannelLayout] = &[L::Gray, L::GrayA, L::Rgb, L::Rgba, L::C
 
 impl Format {
     /// Every format known to the crate (enabled or not).
-    pub const ALL: [Format; 19] = [
+    pub const ALL: [Format; 20] = [
         Format::Png,
         Format::Jpeg,
         Format::Tiff,
@@ -115,6 +118,7 @@ impl Format {
         Format::Heif,
         Format::Fits,
         Format::Dpx,
+        Format::Pixar,
     ];
 
     pub fn caps(self) -> FormatCaps {
@@ -148,6 +152,7 @@ impl Format {
             Format::Heif => "HEIF",
             Format::Fits => "FITS",
             Format::Dpx => "DPX",
+            Format::Pixar => "Pixar",
         }
     }
 
@@ -174,6 +179,7 @@ impl Format {
             Format::Heif => &["heic", "heif", "hif"],
             Format::Fits => &["fits", "fit", "fts"],
             Format::Dpx => &["dpx"],
+            Format::Pixar => &["pxr"],
         }
     }
 
@@ -198,6 +204,7 @@ impl Format {
             Format::Heif => "image/heif",
             Format::Fits => "image/fits",
             Format::Dpx => "image/x-dpx",
+            Format::Pixar => "image/x-pixar",
         }
     }
 
@@ -253,6 +260,7 @@ pub fn caps(format: Format) -> FormatCaps {
         Format::Fits => FormatCaps { depths: &[S::U8, S::U16, S::F32], layouts: &[L::Gray, L::Rgb], alpha: false, text: true, ..base },
         // `text`: the DPX header fields only (see `fidelity_warnings_with`).
         Format::Dpx => FormatCaps { depths: &[S::U8, S::U16], layouts: &[L::Gray, L::Rgb, L::Rgba], text: true, ..base },
+        Format::Pixar => FormatCaps { read: true, write: false, depths: &[S::U8], layouts: &[L::Gray, L::GrayA, L::Rgb, L::Rgba], ..base },
     }
 }
 
@@ -306,6 +314,9 @@ pub fn detect(bytes: &[u8]) -> Option<Format> {
     }
     if b.starts_with(b"SDPX") || b.starts_with(b"XPDS") {
         return Some(Format::Dpx);
+    }
+    if crate::codecs::pixar::looks_like_pixar(b) {
+        return Some(Format::Pixar);
     }
     if b.starts_with(b"SIMPLE  =") {
         return Some(Format::Fits);

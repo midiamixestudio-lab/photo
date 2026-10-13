@@ -187,6 +187,15 @@ fn detect_magic_hdr() {
     assert_eq!(detect(b"#?RGBE\n"), Some(Format::Hdr));
 }
 #[test]
+fn detect_magic_pixar() {
+    assert_eq!(detect(&[0x80, 0xE8, 0x00, 0x00, 0x00, 0x00]), Some(Format::Pixar));
+    assert_eq!(from_extension("scan.PXR"), Some(Format::Pixar));
+    assert!(caps(Format::Pixar).read && !caps(Format::Pixar).write, "Pixar is read-only");
+    assert!(ASYMMETRIC_EXCEPTIONS.iter().any(|(f, _)| *f == Format::Pixar));
+    // A bare magic is an error, never a panic.
+    assert!(decode_as(Format::Pixar, &[0x80, 0xE8, 0x00, 0x00]).is_err());
+}
+#[test]
 fn detect_magic_avif() {
     assert_eq!(detect(b"\0\0\0\x1cftypavif\0\0\0\0avifmif1miaf"), Some(Format::Avif));
     assert_eq!(detect(b"\0\0\0\x1cftypavis\0\0\0\0avismsf1miaf"), Some(Format::Avif));
