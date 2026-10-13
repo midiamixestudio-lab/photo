@@ -1,6 +1,6 @@
 # UI parity: tools, handles, modifiers and feel
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (horizontal Type tool path text, #5189; smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
 
 How PhotoCraft's direct manipulation compares with Photoshop 2026 (27.11.0): the toolbox, the
 handles and modifier keys of each gesture, nudging, snapping, numeric precision, navigation,
@@ -97,6 +97,7 @@ Triangle and Curvature Pen (minus legacy Rounded Rectangle and Targeted Adjustme
 | ⌘-drag temporary Move shows the box and snaps | partial | #2681 |
 | ⌘-right-click layer list under the pointer | done | `layer_pick_ui.rs` |
 | Double-click type to edit it (caret at the pointer, Type tool) | done | #1132, `type_tool::edit_at` |
+| Horizontal Type tool clicks an ellipse/shape, work path or selected saved path; path stays visible and caret/selection follow it | partial | #5189, 2026-10-13, `type_tool.rs`: click offset, closed-circle seam and atomic create/undo; start/end/flip handles and vertical path text UI remain missing. Native saves preserve it; PSD saves as point text |
 | Moving a selection on a mask moves the mask, not the pixels | partial | #2468 |
 
 ## Selection modifiers
@@ -232,3 +233,4 @@ Paragraph; the rest open as in-app floating windows.
 | 2026-10-12 | minor | Smart filter rows can be selected, and dragged (⌥: copied) onto another smart object or onto Delete (#4271) |
 | 2026-10-12 | minor | Free Transform options bar: H and V skew fields; a sheared box reads as skew instead of a taller H |
 | 2026-10-13 | minor | Smart filter rows can be dragged up or down their stack to reorder the filters |
+| 2026-10-13 | minor | Horizontal Type tool clicks shape/work/saved paths with curved caret and selection (#5189); PSD path text and start/end/flip handles remain open; estimates unchanged |

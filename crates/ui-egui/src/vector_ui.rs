@@ -952,6 +952,11 @@ pub fn draw_overlay(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform
             crate::anchor_tools::draw_hover(app, painter, &to_scr, accent, painter.ctx().input(|i| i.modifiers));
         }
     } else if paths {
+        if tool == Tool::Type && app.ui.text_edit.is_none() {
+            for (path, _) in crate::type_tool::type_paths(app) {
+                draw_path(&path, false);
+            }
+        }
         if vector_tool {
             if let Some(wp) = &doc.work_path {
                 draw_path(wp, tool == Tool::PathSelection);
@@ -1992,7 +1997,7 @@ mod tests {
         assert!(app.session.active().unwrap().doc.work_path.is_some());
         finish_shape(&mut app, Tool::Rectangle, [100.0, 100.0], [160.0, 150.0], egui::Modifiers::NONE);
         let toggle = |app: &mut PhotocraftApp, id: &str| crate::menus::invoke(app, &ctx, id, Value::Null).unwrap();
-        for tool in [Tool::Pen, Tool::PathSelection, Tool::DirectSelection, Tool::Rectangle] {
+        for tool in [Tool::Pen, Tool::PathSelection, Tool::DirectSelection, Tool::Rectangle, Tool::Type] {
             app.ui.tool = tool;
             assert!(app.ui.view.show.target_path && app.ui.view.extras);
             assert!(overlay_shapes(&app, &ctx) > 0, "{tool:?}: the paths are drawn by default");
