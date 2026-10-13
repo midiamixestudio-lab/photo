@@ -196,6 +196,7 @@ pub mod stylus;
 pub mod swap_arrow;
 pub mod swatches_ui;
 pub mod symmetry_ui;
+pub mod system_info;
 mod tab_strip;
 pub mod targa_options_ui;
 pub mod text_field_menu;
@@ -485,6 +486,9 @@ pub struct Services {
     /// while AppKit's run loop is still going crashes or hangs Touch Bar Macs (#1575, #1458).
     /// Without one, eframe closes the window and the app ends with it.
     pub quit: Option<QuitFn>,
+    /// What kind of install this is and where it keeps its settings, log and crash-recovery
+    /// files (Help › System Info). `None` on the web.
+    pub install: Option<system_info::InstallInfo>,
 }
 
 /// A document histogram being computed off the UI thread: (document, revision, receiver of

@@ -913,6 +913,10 @@ pub struct GpuInfo {
     pub device_type: String,
     /// Driver name and version as the driver reports them.
     pub driver: String,
+    /// PCI vendor and device ids (0 when the backend doesn't report them), which pin down the
+    /// exact chip behind a marketing name.
+    pub vendor_id: u32,
+    pub device_id: u32,
     /// `performance.gpuBackend` at launch.
     pub preference: String,
     /// The backend startup chose ("auto", "dx12", "cpu", …, or "env" for `WGPU_BACKEND`).
@@ -940,6 +944,8 @@ impl GpuInfo {
         }
         .to_string();
         self.driver = [info.driver.as_str(), info.driver_info.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ");
+        self.vendor_id = info.vendor;
+        self.device_id = info.device;
     }
 
     /// Human-readable lines for Help › System Info.

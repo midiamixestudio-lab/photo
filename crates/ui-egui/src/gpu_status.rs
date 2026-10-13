@@ -1,8 +1,8 @@
 //! GPU health in the shell (#243, #4): when the wgpu device is lost or reports an error, the
 //! GPU canvas is dropped and every document keeps drawing through the CPU compositor and egui
 //! textures for the rest of the session, with a recovery warning. Also runs the desktop app's
-//! "started" hook once the first frames have rendered (the crash-safe startup marker), and
-//! provides the Help › System Info text (including the monitor profile in use).
+//! "started" hook once the first frames have rendered (the crash-safe startup marker). Help ›
+//! System Info is `system_info`.
 
 use serde_json::json;
 
@@ -56,35 +56,6 @@ pub fn fall_back(app: &mut PhotocraftApp, fault: &photocraft_gpu::Fault) {
     queue_fallback_notice(app, fault.to_string());
     app.ui.status = tl!(title).to_string();
     app.ui.status_error = true;
-}
-
-/// English diagnostics for issue reports (Copy and the control API), independent of UI language.
-pub fn system_info(app: &PhotocraftApp) -> Vec<String> {
-    crate::i18n::with_language(crate::i18n::Lang::EN, || system_info_ui(app))
-}
-
-/// Help › System Info's on-screen text: version, platform and the graphics state.
-pub fn system_info_ui(app: &PhotocraftApp) -> Vec<String> {
-    let mut v = vec![format!("PhotoCraft {}", photocraft_engine::build_info::long_version()), {
-        let template = "Platform: {os} {arch}";
-        crate::i18n::fmt(tl!(template), &[("os", std::env::consts::OS), ("arch", std::env::consts::ARCH)])
-    }];
-    v.extend(app.perf.gpu_info.lines());
-    v.extend(crate::monitor_status::summary_lines(app));
-    v
-}
-
-/// The `help.systemInfo` result: the same facts as JSON.
-pub fn system_info_json(app: &PhotocraftApp) -> serde_json::Value {
-    json!({
-        "version": photocraft_engine::build_info::long_version(),
-        "os": std::env::consts::OS,
-        "arch": std::env::consts::ARCH,
-        "gpu": app.perf.gpu_info,
-        "monitor": app.session.color.monitor_status(),
-        "displays": app.session.color.display_statuses(),
-        "lines": system_info(app),
-    })
 }
 
 /// Queue the same recovery warning for startup and runtime failures.
@@ -156,33 +127,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn system_info_copy_and_api_stay_english_in_czech_ui() {
-        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
-        app.perf.gpu_info.adapter = "Test GPU".into();
-        app.perf.gpu_info.preference = "auto".into();
-        let english = crate::i18n::with_language(crate::i18n::Lang::EN, || system_info(&app));
-        crate::i18n::with_language(crate::i18n::Lang::from_code("cs").unwrap(), || {
-            assert_eq!(system_info(&app), english, "clipboard diagnostics include English monitor profiles too");
-            let result = crate::menus::invoke(&mut app, &egui::Context::default(), "help.systemInfo", json!({})).unwrap();
-            assert_eq!(result["info"]["lines"], json!(english));
-            assert_eq!(crate::i18n::current().code(), "cs", "diagnostics restore the drawing language");
-            let screen = system_info_ui(&app);
-            assert!(screen.iter().any(|line| line == "Grafický adaptér: Test GPU"), "{screen:?}");
-            assert!(screen.iter().any(|line| line.starts_with("Profil monitoru:")), "{screen:?}");
-            assert!(english.iter().any(|line| line == "GPU backend preference: auto"));
-        });
-    }
-
-    #[test]
-    fn system_info_translates_empty_and_stored_auto_only_for_display() {
+    fn gpu_info_lines_translate_empty_and_stored_auto_only_for_display() {
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
         // Hardware names are opaque even when they happen to match a lookup key.
         app.perf.gpu_info.adapter = "auto".into();
         crate::i18n::with_language(crate::i18n::Lang::from_code("cs").unwrap(), || {
-            let empty = system_info_ui(&app);
+            let empty = app.perf.gpu_info.lines();
             app.perf.gpu_info.preference = "auto".into();
             app.perf.gpu_info.selected = "auto".into();
-            assert_eq!(system_info_ui(&app), empty);
+            assert_eq!(app.perf.gpu_info.lines(), empty);
             assert!(empty.iter().any(|line| line == "Grafický adaptér: auto"));
             assert!(empty.iter().any(|line| line == "Preferovaný backend GPU: automaticky"), "{empty:?}");
             assert_eq!(app.perf.gpu_info.preference, "auto");

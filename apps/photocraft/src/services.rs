@@ -215,6 +215,44 @@ fn recovery_dir() -> Option<PathBuf> {
     config_dir().map(|d| d.join("Recovery"))
 }
 
+/// What kind of install this is and where it keeps its files (Help › System Info).
+fn install_info() -> photocraft_ui_egui::system_info::InstallInfo {
+    let data = crate::app_dirs::current();
+    let exe = std::env::current_exe().ok();
+    let set = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
+    photocraft_ui_egui::system_info::InstallInfo {
+        kind: install_kind(data.mode, exe.as_deref(), set("APPIMAGE"), set("FLATPAK_ID"), set("SNAP")),
+        settings_dir: data.dir.clone(),
+        log_file: data.dir.as_ref().map(|d| d.join("logs").join(crate::logging::LOG_FILE)),
+        recovery_dir: recovery_dir(),
+    }
+}
+
+/// "Installed", "Portable", "AppImage", "Flatpak", "Snap" or "Built from source" (an executable
+/// under a Cargo `target` folder), plus a note when `PHOTOCRAFT_CONFIG_DIR` moved the settings.
+pub fn install_kind(mode: crate::app_dirs::Mode, exe: Option<&Path>, appimage: bool, flatpak: bool, snap: bool) -> String {
+    use crate::app_dirs::Mode;
+    let source = exe.is_some_and(|e| e.components().any(|c| c.as_os_str() == "target"));
+    let base = if flatpak {
+        "Flatpak"
+    } else if snap {
+        "Snap"
+    } else if appimage {
+        "AppImage"
+    } else if source {
+        "Built from source"
+    } else if mode == Mode::Portable {
+        "Portable"
+    } else {
+        "Installed"
+    };
+    match mode {
+        Mode::Override => format!("{base}, settings from PHOTOCRAFT_CONFIG_DIR"),
+        Mode::Portable if base != "Portable" => format!("{base}, portable settings"),
+        _ => base.to_string(),
+    }
+}
+
 /// Write `bytes` crash-safely (temp file beside the target, fsync, rename, directory fsync; see
 /// [`photocraft_format::atomic`]). Every document write (Save, Save As, Export, Save for Web) and
 /// the preferences go through here, so a failed or interrupted save never destroys the old file.
@@ -508,6 +546,7 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         // Set by main, which starts loading the store before the window opens.
         preset_store: None,
         is_wayland: false,
+        install: Some(install_info()),
         ..recovery_services(recovery_dir())
     }
 }
@@ -591,6 +630,22 @@ pub fn export_flat(doc: &Document, path: &str) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn install_kind_names_how_photocraft_was_installed() {
+        use crate::app_dirs::Mode;
+        let installed = Path::new(if cfg!(windows) { r"C:\Program Files\PhotoCraft\photocraft.exe" } else { "/usr/bin/photocraft" });
+        let built = Path::new(if cfg!(windows) { r"D:\src\photocraft\target\release\photocraft.exe" } else { "/src/photocraft/target/release/photocraft" });
+        assert_eq!(install_kind(Mode::Platform, Some(installed), false, false, false), "Installed");
+        assert_eq!(install_kind(Mode::Portable, Some(installed), false, false, false), "Portable");
+        assert_eq!(install_kind(Mode::Platform, Some(built), false, false, false), "Built from source");
+        assert_eq!(install_kind(Mode::Platform, Some(installed), true, false, false), "AppImage");
+        assert_eq!(install_kind(Mode::Platform, Some(installed), true, true, false), "Flatpak");
+        assert_eq!(install_kind(Mode::Platform, Some(installed), false, false, true), "Snap");
+        assert_eq!(install_kind(Mode::Override, Some(built), false, false, false), "Built from source, settings from PHOTOCRAFT_CONFIG_DIR");
+        assert_eq!(install_kind(Mode::Portable, Some(built), false, false, false), "Built from source, portable settings");
+        assert_eq!(install_kind(Mode::Platform, None, false, false, false), "Installed");
+    }
+
     use super::*;
     use photocraft_engine::Session;
     use photocraft_format::list_recovery;

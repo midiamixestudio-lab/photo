@@ -411,10 +411,14 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         }
         "help.about" => Ok(json!({"dialog": app.ui.open_dialog(DialogKind::About, Default::default())})),
         "help.systemInfo" => {
+            // One report for the dialog and the reply, taken now.
+            let report = crate::system_info::report(app, Some(ctx));
+            let info = crate::system_info::json(app, &report);
             let mut fields = serde_json::Map::new();
             fields.insert("systemInfo".into(), json!(true));
+            fields.insert("report".into(), json!(report));
             let dialog = app.ui.open_dialog(DialogKind::About, fields);
-            Ok(json!({"dialog": dialog, "info": crate::gpu_status::system_info_json(app)}))
+            Ok(json!({"dialog": dialog, "info": info}))
         }
         "file.export.exportAs" => Ok(json!({"dialog": crate::export_dialog::open(app)?})),
         "file.export.quickExportAsPng" => crate::export_dialog::quick_export_png(app),
