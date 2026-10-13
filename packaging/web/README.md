@@ -6,7 +6,7 @@ static site in `photocraft-web-<version>/`:
 | File | What it is |
 |---|---|
 | `index.html` | The page. It loads everything through relative URLs. |
-| `photocraft-web-boot-<hash>.js`, `photocraft-web-boot-<hash>_bg.wasm` | A small module (about 60 KB) that starts the app from its parts, with its wasm-bindgen glue |
+| `photocraft-web-boot-<hash>.js`, `photocraft-web-boot-<hash>_bg.wasm` | A small module (about 120 KB) that starts the app from its parts, with its wasm-bindgen glue |
 | `app/photocraft-web-<hash>.part-aa`, `-ab`, … | The app's WebAssembly, gzipped and cut into parts of at most 20 MiB (see [Sizes](#sizes)) |
 | `app/parts.txt` | The parts, in order |
 | `app/photocraft-web.js` | The app's wasm-bindgen glue (generated, ES module) |
@@ -70,9 +70,9 @@ The editor and image processing run on the visitor's device. Open uses the brows
 picker; Save and Export download files. Preferences use browser localStorage. There is no
 server-side document storage, desktop TCP control server, or web autosave/crash recovery;
 save/download work before closing or reloading the page. A browser with WebGPU or WebGL2 is
-required; `?webgl` forces the fallback when troubleshooting. The release zip's site also
-needs a browser that can inflate a stream (`DecompressionStream`: Safari 16.4, Firefox 113,
-Chrome 80 or later); in an older one the page says so.
+required; `?webgl` forces the fallback when troubleshooting. In a browser that can't
+inflate a stream itself (no `DecompressionStream`: before Safari 16.4 and Firefox 113), the
+release zip's site inflates the app's parts in its own code, a little slower.
 
 To verify the browser deployment, open the page, open an image and save/export it.
 
@@ -84,7 +84,7 @@ Measured on 2026-10-13 (0.8.2, `packaging/web/package.sh`):
 |---|---|
 | `app/photocraft-web-<hash>.part-aa` (the only part today) | 11,401,527 bytes (10.9 MiB) |
 | `app/photocraft-web.js` | about 170 KB (26 KB with gzip) |
-| `photocraft-web-boot-<hash>_bg.wasm` and `.js` | about 60 KB together |
+| `photocraft-web-boot-<hash>_bg.wasm` and `.js` | about 120 KB together |
 
 The app's WebAssembly is 25,019,043 bytes (23.9 MiB) before gzip.
 
@@ -116,7 +116,7 @@ their names and need revalidation.
   any other type, and the app then loads slowly or not at all. Serve `.js` as `text/javascript`.
   Most hosts already do both. For nginx, check that `mime.types` has `application/wasm wasm;`.
 - **The parts as they are:** serve `app/*.part-*` byte for byte, with no `Content-Encoding` (they
-  are gzip already, and the page inflates them itself). Their extension is one servers don't
+  are gzip already, and the page inflates them). Their extension is one servers don't
   know, so the usual result, `application/octet-stream` and no compression, is right.
 - **Missing files are 404s:** a host that answers every unknown path with `index.html` (a
   single-page-app fallback) hides a failed upload. PhotoCraft notices and says the download

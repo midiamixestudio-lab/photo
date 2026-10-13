@@ -4654,6 +4654,7 @@ dependencies = [
 name = "photocraft-web-boot"
 version = "0.8.2"
 dependencies = [
+ "flate2",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",

@@ -8,6 +8,7 @@
 //! one part, however large the app grows.
 //!
 //! The browser inflates the parts (`DecompressionStream`: Safari 16.4, Firefox 113, Chrome 80).
+//! In one that can't, this module inflates them itself, a little slower.
 //!
 //! A download that fails is tried again, the later tries past the browser's cache (a bad copy
 //! there would otherwise fail forever). When every try fails the page says so and offers a reload.
@@ -35,6 +36,31 @@ fn parts(list: &str) -> Option<Vec<String>> {
     (!parts.is_empty() && parts.iter().all(plain)).then_some(parts)
 }
 
+/// Gzip inflated a chunk at a time, for browsers that can't do it themselves.
+#[cfg(any(target_arch = "wasm32", test))]
+struct Inflater(flate2::write::GzDecoder<Vec<u8>>);
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl Inflater {
+    fn new() -> Self {
+        Inflater(flate2::write::GzDecoder::new(Vec::new()))
+    }
+
+    /// What the next `chunk` of the gzip stream inflates to (often nothing: the decoder holds on
+    /// to input until it has a whole block).
+    fn push(&mut self, chunk: &[u8]) -> std::io::Result<Vec<u8>> {
+        std::io::Write::write_all(&mut self.0, chunk)?;
+        Ok(std::mem::take(self.0.get_mut()))
+    }
+
+    /// The rest, once the stream has ended. An error when it ended early or its checksum is
+    /// wrong, the same as the browser's inflater gives.
+    fn finish(&mut self) -> std::io::Result<Vec<u8>> {
+        self.0.try_finish()?;
+        Ok(std::mem::take(self.0.get_mut()))
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 mod boot {
     use std::cell::RefCell;
@@ -43,8 +69,11 @@ mod boot {
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::{JsFuture, spawn_local};
     use web_sys::{
-        Headers, ReadableStream, ReadableWritablePair, RequestCache, RequestInit, Response, ResponseInit, StreamPipeOptions, TransformStream, WritableStream,
+        Headers, ReadableStream, ReadableWritablePair, RequestCache, RequestInit, Response, ResponseInit, StreamPipeOptions, TransformStream,
+        TransformStreamDefaultController, Transformer, WritableStream,
     };
+
+    use super::Inflater;
 
     /// Where packaging puts the app, next to this module's own files.
     const PARTS: &str = "./app/parts.txt";
@@ -105,15 +134,42 @@ mod boot {
         Ok(())
     }
 
-    /// Whether the browser can inflate the parts.
-    fn can_inflate() -> bool {
-        js_sys::Reflect::has(&js_sys::global(), &JsValue::from_str("DecompressionStream")).unwrap_or(false)
+    /// Passes inflated bytes on to the stream's reader.
+    fn emit(inflated: std::io::Result<Vec<u8>>, out: &TransformStreamDefaultController) -> Result<(), JsValue> {
+        let inflated = inflated.map_err(|e| JsValue::from_str(&format!("the download is damaged ({e})")))?;
+        if inflated.is_empty() { Ok(()) } else { out.enqueue_with_chunk(&js_sys::Uint8Array::from(inflated.as_slice())) }
     }
 
-    /// `compressed` inflated by the browser.
+    /// A gzip inflater with the shape of `DecompressionStream`, running in this module.
+    fn own_inflater() -> Result<TransformStream, JsValue> {
+        let inflater = Rc::new(RefCell::new(Inflater::new()));
+        let last = inflater.clone();
+        let busy = || JsValue::from_str("the inflater is in use");
+        let transform = Closure::<dyn FnMut(JsValue, TransformStreamDefaultController) -> Result<(), JsValue>>::new(
+            move |chunk: JsValue, out: TransformStreamDefaultController| {
+                let chunk = js_sys::Uint8Array::new(&chunk).to_vec();
+                emit(inflater.try_borrow_mut().map_err(|_| busy())?.push(&chunk), &out)
+            },
+        );
+        let flush = Closure::<dyn FnMut(TransformStreamDefaultController) -> Result<(), JsValue>>::new(move |out: TransformStreamDefaultController| {
+            emit(last.try_borrow_mut().map_err(|_| busy())?.finish(), &out)
+        });
+        let transformer = Transformer::new();
+        transformer.set_transform(&transform.into_js_value().unchecked_into());
+        transformer.set_flush(&flush.into_js_value().unchecked_into());
+        TransformStream::new_with_transformer(&transformer)
+    }
+
+    /// `compressed` inflated: by the browser where it can, otherwise here.
     fn inflated(compressed: &ReadableStream) -> Result<ReadableStream, JsValue> {
-        let inflater = DecompressionStream::new("gzip")?;
-        Ok(compressed.pipe_through(&ReadableWritablePair::new(&inflater.readable(), &inflater.writable())))
+        let pair = if js_sys::Reflect::has(&js_sys::global(), &JsValue::from_str("DecompressionStream"))? {
+            let inflater = DecompressionStream::new("gzip")?;
+            ReadableWritablePair::new(&inflater.readable(), &inflater.writable())
+        } else {
+            let inflater = own_inflater()?;
+            ReadableWritablePair::new(&inflater.readable(), &inflater.writable())
+        };
+        Ok(compressed.pipe_through(&pair))
     }
 
     async fn run(fresh: bool) -> Result<(), JsValue> {
@@ -170,11 +226,6 @@ mod boot {
     }
 
     pub fn start() {
-        if !can_inflate() {
-            // Trying again can't help, and neither can a reload.
-            say("PhotoCraft needs a newer browser: Safari 16.4, Firefox 113, Chrome 80 or later.", false);
-            return;
-        }
         spawn_local(async {
             let mut attempt = 0;
             loop {
@@ -207,7 +258,64 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{MARKER, parts};
+    use super::{Inflater, MARKER, parts};
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        let mut z = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut z, bytes).expect("gzip");
+        z.finish().expect("gzip")
+    }
+
+    /// Bytes that don't compress to nothing, so the gzip stream spans many chunks.
+    fn sample() -> Vec<u8> {
+        let mut x = 0x2545_f491_4f6c_dd1d_u64;
+        (0..200_000)
+            .map(|i| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                if i % 3 == 0 { x as u8 } else { (i / 7) as u8 }
+            })
+            .collect()
+    }
+
+    /// The parts arrive in whatever pieces the network gives; the inflater must not care where
+    /// they are cut.
+    #[test]
+    fn the_inflater_gives_back_the_bytes_however_the_stream_is_cut() {
+        let (plain, packed) = (sample(), gzip(&sample()));
+        for cut in [1, 7, 4096, 65_536, packed.len()] {
+            let mut inflater = Inflater::new();
+            let mut out = Vec::new();
+            for chunk in packed.chunks(cut) {
+                out.extend(inflater.push(chunk).expect("push"));
+            }
+            out.extend(inflater.finish().expect("finish"));
+            assert_eq!(out, plain, "chunks of {cut}");
+        }
+    }
+
+    /// A download that stops early, or whose bytes changed on the way, must fail (the boot module
+    /// then tries again), never start a damaged app.
+    #[test]
+    fn the_inflater_refuses_a_short_or_damaged_stream() {
+        let packed = gzip(&sample());
+        let run = |bytes: &[u8]| -> std::io::Result<Vec<u8>> {
+            let mut inflater = Inflater::new();
+            let mut out = inflater.push(bytes)?;
+            out.extend(inflater.finish()?);
+            Ok(out)
+        };
+        assert!(run(&packed).is_ok());
+        assert!(run(&packed[..packed.len() / 2]).is_err(), "cut short");
+        assert!(run(&packed[..packed.len() - 4]).is_err(), "trailer cut");
+        let mut damaged = packed.clone();
+        let middle = damaged.len() / 2;
+        damaged[middle] ^= 0x55;
+        assert!(run(&damaged).is_err(), "a changed byte");
+        assert!(run(b"<!DOCTYPE html><html>not gzip</html>").is_err(), "a web page");
+        assert!(run(b"").is_err(), "nothing at all");
+    }
 
     #[test]
     fn a_parts_list_gives_its_names_in_order() {
