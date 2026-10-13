@@ -613,18 +613,38 @@ fn healing_brush(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// The History Brush's source: the targeted surface (pixels, mask, channel) as it was in history
-/// state `state` (default: the oldest state still held, the "Open" snapshot unless trimmed).
+/// state `state` or snapshot `snapshot` (default: the document's history source, or state 0).
 fn history_source(s: &Session, id: Option<LayerId>, p: &Value, cmd: &str) -> Result<Surface> {
     let st = s.active().ok_or(EngineError::NoDocument)?;
-    let explicit = p.get("state").and_then(Value::as_u64).map(|v| v as usize);
-    let source_doc = match explicit {
-        Some(i) if i == st.history.past_len() => st.doc.clone(),
-        Some(i) => st.history.state(i).ok_or_else(|| bad(cmd, format!("no history state {i} (0..={})", st.history.past_len())))?,
-        None => st.history.state(0).unwrap_or_else(|| st.doc.clone()),
+    let explicit_state = p.get("state").and_then(Value::as_u64).map(|v| v as usize);
+    let explicit_snapshot = p.get("snapshot").and_then(Value::as_u64);
+    let source_doc = if let Some(snap_id) = explicit_snapshot {
+        let snap = st.snapshots.iter().find(|snap| snap.id == snap_id).ok_or_else(|| bad(cmd, format!("no snapshot {snap_id}")))?;
+        snap.doc.clone()
+    } else if let Some(i) = explicit_state {
+        if i == st.history.past_len() {
+            st.doc.clone()
+        } else {
+            st.history.state(i).ok_or_else(|| bad(cmd, format!("no history state {i} (0..={})", st.history.past_len())))?
+        }
+    } else if let Some(snap_id) = st.history_source_snapshot {
+        if let Some(snap) = st.snapshots.iter().find(|snap| snap.id == snap_id) {
+            snap.doc.clone()
+        } else {
+            st.history.state(0).unwrap_or_else(|| st.doc.clone())
+        }
+    } else if let Some(i) = st.history_source_state {
+        if i == st.history.past_len() {
+            st.doc.clone()
+        } else {
+            st.history.state(i).unwrap_or_else(|| st.history.state(0).unwrap_or_else(|| st.doc.clone()))
+        }
+    } else {
+        st.history.state(0).unwrap_or_else(|| st.doc.clone())
     };
     crate::channel_cmds::read_target_surface(source_doc.as_ref(), id, p)
         .cloned()
-        .map_err(|_| EngineError::Other("the target did not exist (as pixels, a mask or a channel) in that history state".into()))
+        .map_err(|_| EngineError::Other("the target did not exist (as pixels, a mask or a channel) in that history source".into()))
 }
 
 fn history_brush(s: &mut Session, p: &Value) -> Result<Value> {

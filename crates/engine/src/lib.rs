@@ -228,6 +228,10 @@ pub struct DocState {
     pub snapshots: Vec<history_cmds::Snapshot>,
     /// The id the next snapshot gets; ids are never reused, so deleting one keeps the others.
     next_snapshot: u64,
+    /// History Brush sampling source: an explicit history state index, or a snapshot id.
+    /// If neither is set, defaults to state 0 (the opening state).
+    pub history_source_state: Option<usize>,
+    pub history_source_snapshot: Option<u64>,
 }
 
 impl DocState {
@@ -257,6 +261,8 @@ impl DocState {
             color_samplers: Vec::new(),
             snapshots: Vec::new(),
             next_snapshot: 1,
+            history_source_state: None,
+            history_source_snapshot: None,
         }
     }
     /// The selected layers in bottom-to-top document order, always including the active layer.

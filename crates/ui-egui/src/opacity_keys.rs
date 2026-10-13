@@ -32,7 +32,7 @@ enum Target {
 
 fn target(tool: Tool) -> Target {
     match tool {
-        Tool::Brush | Tool::Eraser => Target::Brush { flow: true },
+        Tool::Brush | Tool::Eraser | Tool::CloneStamp | Tool::HistoryBrush => Target::Brush { flow: true },
         Tool::Pencil => Target::Brush { flow: false },
         Tool::Gradient | Tool::PaintBucket => Target::ToolOpacity,
         // Their options-bar number is a strength, exposure or tolerance, not this opacity.

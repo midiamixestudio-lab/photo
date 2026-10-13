@@ -195,6 +195,32 @@ fn can_delete(s: &Session) -> std::result::Result<(), String> {
     s.active().filter(|d| d.history.can_undo()).map(|_| ()).ok_or_else(|| "the oldest state can't be deleted".into())
 }
 
+/// Setting the History Brush source: a state index or snapshot id.
+fn set_history_source(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "history.setSource";
+    let st = s.active_mut().ok_or(EngineError::NoDocument)?;
+    if let Some(snap_id) = p.get("snapshot").and_then(Value::as_u64) {
+        if !st.snapshots.iter().any(|snap| snap.id == snap_id) {
+            return Err(bad(CMD, format!("no snapshot {snap_id}")));
+        }
+        st.history_source_snapshot = Some(snap_id);
+        st.history_source_state = None;
+        Ok(json!({ "snapshot": snap_id }))
+    } else if let Some(i) = p.get("state").and_then(Value::as_u64).map(|v| v as usize) {
+        let max = st.history.past_len();
+        if i > max {
+            return Err(bad(CMD, format!("`state` = {i} is not a valid state (0..={max})")));
+        }
+        st.history_source_state = Some(i);
+        st.history_source_snapshot = None;
+        Ok(json!({ "state": i }))
+    } else {
+        st.history_source_state = None;
+        st.history_source_snapshot = None;
+        Ok(json!({ "default": true }))
+    }
+}
+
 fn has_doc(s: &Session) -> std::result::Result<(), String> {
     s.active().map(|_| ()).ok_or_else(|| "no document open".into())
 }
@@ -291,6 +317,16 @@ pub fn specs() -> Vec<CommandSpec> {
             enabled: has_doc,
             run: delete_snapshot,
             journal: true,
+        },
+        CommandSpec {
+            id: "history.setSource",
+            label: "Set History Brush Source",
+            menu: &[],
+            shortcut: None,
+            params: r##"{"snapshot":id} | {"state":index} → sets the History Brush's source state or snapshot"##,
+            enabled: has_doc,
+            run: set_history_source,
+            journal: false,
         },
     ]
 }
@@ -510,5 +546,32 @@ mod tests {
             assert!(s.execute("history.newDocument", p.clone()).is_err(), "{p}");
         }
         assert_eq!(s.documents().len(), 1);
+    }
+
+    #[test]
+    fn set_history_source_works() {
+        let mut s = session();
+        s.execute("history.newSnapshot", json!({})).unwrap();
+        assert_eq!(s.active().unwrap().history_source_snapshot, None);
+        assert_eq!(s.active().unwrap().history_source_state, None);
+
+        // Set snapshot source
+        s.execute("history.setSource", json!({"snapshot": 1})).unwrap();
+        assert_eq!(s.active().unwrap().history_source_snapshot, Some(1));
+        assert_eq!(s.active().unwrap().history_source_state, None);
+
+        // Set state source
+        s.execute("history.setSource", json!({"state": 0})).unwrap();
+        assert_eq!(s.active().unwrap().history_source_snapshot, None);
+        assert_eq!(s.active().unwrap().history_source_state, Some(0));
+
+        // Reset to default
+        s.execute("history.setSource", json!({})).unwrap();
+        assert_eq!(s.active().unwrap().history_source_snapshot, None);
+        assert_eq!(s.active().unwrap().history_source_state, None);
+
+        // Bad params
+        assert!(s.execute("history.setSource", json!({"snapshot": 999})).is_err());
+        assert!(s.execute("history.setSource", json!({"state": 999})).is_err());
     }
 }

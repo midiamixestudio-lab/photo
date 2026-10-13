@@ -45,6 +45,15 @@ pub(crate) fn clone_params(app: &PhotocraftApp) -> Option<Value> {
     Some(p)
 }
 
+/// History Brush params for the options bar (without `points` and `target`): shared by the live
+/// preview and the commit.
+pub(crate) fn history_params(app: &PhotocraftApp) -> Value {
+    json!({
+        "opacity": app.session.tools.brush.opacity * 100.0,
+        "flow": app.session.tools.brush.flow * 100.0,
+    })
+}
+
 /// The command and options-bar params (without `points` and `target`) of a sequential-dab tool:
 /// Blur, Sharpen, Smudge, Dodge, Burn, Sponge. Shared by the live preview and the commit.
 pub(crate) fn dab_params(app: &PhotocraftApp, tool: Tool) -> Option<(&'static str, Value)> {
@@ -125,7 +134,7 @@ pub fn finish_stroke(app: &mut PhotocraftApp, tool: Tool, points: &[[f64; 3]], m
             };
             (if tool == Tool::Healing { "paint.healingBrush" } else { "paint.cloneStamp" }, p)
         }
-        Tool::HistoryBrush => ("paint.historyBrush", json!({})),
+        Tool::HistoryBrush => ("paint.historyBrush", history_params(app)),
         Tool::Blur | Tool::Sharpen | Tool::Smudge | Tool::Dodge | Tool::Burn | Tool::Sponge => match dab_params(app, tool) {
             Some(cp) => cp,
             None => return false,
@@ -604,7 +613,21 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
             crate::widgets::value_field(ui, &mut o.cr_tolerance, 0.0..=100.0, "%", 62.0);
             crate::widgets::checkbox(ui, &mut o.cr_anti_alias, tl!("Anti-alias"));
         }
-        Tool::HistoryBrush => opt(ui, "Paints from the document's opening state"),
+        Tool::HistoryBrush => {
+            let label = if let Some(st) = app.session.active() {
+                if let Some(snap_id) = st.history_source_snapshot {
+                    st.snapshots.iter().find(|s| s.id == snap_id).map(|s| format!("Source: {}", s.name)).unwrap_or_else(|| "Source: Opening state".into())
+                } else if let Some(state_idx) = st.history_source_state {
+                    let entries = st.history.entries();
+                    entries.get(state_idx).map(|name| format!("Source: {name}")).unwrap_or_else(|| "Source: Opening state".into())
+                } else {
+                    "Source: Opening state".into()
+                }
+            } else {
+                "Source: Opening state".into()
+            };
+            opt(ui, &label);
+        }
         Tool::QuickSelection => {
             crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl!("Sample All Layers"));
             crate::widgets::checkbox(ui, &mut o.enhance_edge, tl!("Enhance Edge"));
