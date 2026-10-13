@@ -39,6 +39,7 @@ pub mod edit_menu_cmds;
 pub mod eraser_cmds;
 pub mod exr_cmds;
 pub mod extra_cmds;
+pub mod face_cmds;
 pub mod file_cmds;
 pub mod fill_cmds;
 pub mod fill_key_cmds;
