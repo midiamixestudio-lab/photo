@@ -2747,3 +2747,5 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
+	Rotate View Left	向左旋转视图
+	Rotate View Right	向右旋转视图

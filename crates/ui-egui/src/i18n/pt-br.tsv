@@ -3927,3 +3927,5 @@ layerLabel	No Color	Sem cor
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
+	Rotate View Left	Girar visualização para a esquerda
+	Rotate View Right	Girar visualização para a direita
