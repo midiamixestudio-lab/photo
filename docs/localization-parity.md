@@ -9,9 +9,9 @@ Per-language status of PhotoCraft's UI. How catalogs work and how to add one:
 **How measured.** `cargo xtask i18n-coverage` (`xtask/src/i18n_coverage.rs`) defines the key
 universe: `tl!("…")` literals and `trn(` plurals in `ui-egui` (tests excluded), menu-catalog
 labels and path segments, `menus.rs` UI commands, and engine `CommandSpec` labels and menu paths:
-**1,608 English keys** on 2026-10-10. Each catalog (`crates/ui-egui/src/i18n/<code>.tsv`) was
-checked against that universe by a source script replicating the xtask (no build). Catalogs hold
-more rows than the universe because they also translate dynamic `tl!(expr)` strings (~159 call
+**1,772 English keys** on 2026-10-12 (1,608 on 2026-10-10). Each catalog (`crates/ui-egui/src/i18n/<code>.tsv`)
+is checked against that universe by the xtask itself; "rows" are the non-comment, non-blank lines
+of the `.tsv`. Catalogs hold more rows than the universe because they also translate dynamic `tl!(expr)` strings (~159 call
 sites the tool can't enumerate). **Not covered anywhere:** engine error and status messages and
 filter parameter help, which are English in every language; so no language is `full`.
 
@@ -21,8 +21,10 @@ installed per Creative Cloud install, here `en_US`). It has no Hindi, Arabic, In
 Vietnamese UI; Arabic and Hebrew users get English "Middle East" builds with the World-Ready
 composer, and its text engine handles RTL, Devanagari and Indic scripts.
 
-**Summary.** 7 of the 12 key languages at 100% of measured keys (status `partial` because of the
-engine messages), 3 absent (Hindi, Arabic, Vietnamese), plus 8 other languages. Weighted by
+**Summary.** 6 of the 12 key languages at 100% of measured keys (English, Spanish, Portuguese
+(Brazil), Japanese, German, Vietnamese; status `partial` because of the engine messages), 4 at 99.2%
+(Simplified Chinese, French, Indonesian, Korean: 1,758 of 1,772), 2 absent (Hindi, Arabic), plus the other
+shipped languages below. Weighted by
 speakers, ~55% ready. Remaining: 80–140 h, plus native-speaker review (recorded only for Italian,
 2026-10-12).
 
@@ -30,18 +32,18 @@ speakers, ~55% ready. Remaining: 80–140 h, plus native-speaker review (recorde
 
 | Language | Code | UI strings (measured keys) | Catalog rows | Dialogs / tooltips / help | Script support | Native review | Status | To `full` |
 |---|---|---|---:|---|---|---|---|---:|
-| English | `en` | 1,608 / 1,608 (100%) | source | all | Latin | – | full | 0 h |
-| Simplified Chinese | `zh-hans` | 1,608 / 1,608 (100%) | 2,366 | dialogs, tooltips yes; engine messages English | CJK fonts (lazy loader), IME preedit/commit, vertical type | no | partial | 8–12 h |
+| English | `en` | 1,772 / 1,772 (100%) | source | all | Latin | – | full | 0 h |
+| Simplified Chinese | `zh-hans` | 1,758 / 1,772 (99.2%) | 2,597 | dialogs, tooltips yes; engine messages English | CJK fonts (lazy loader), IME preedit/commit, vertical type | no | partial | 8–12 h |
 | Spanish | `es` | 1,608 / 1,608 (100%) | 2,413 | as above | Latin | no | partial | 6–10 h |
 | Hindi | `hi` | 0 (0%) | – | – | Devanagari shaping in the text engine (parley/HarfRust); no Devanagari fallback font (TYPE-218-3) | no | none | 20–30 h |
 | Arabic | `ar` | 0 (0%) | – | – | Arabic shaping and bidi in the text engine, Arabic fallback font; RTL shell layout but not inside panels, and UI labels in LTR word order (DIST-220-4), paragraph direction has no UI (TYPE-218-2), layer names as tofu (#1408, #1693) | no | none | 40–60 h |
-| French | `fr` | 1,608 / 1,608 (100%) | 2,766 | as above | Latin | no | partial | 6–10 h |
-| Portuguese (Brazil) | `pt-br` | 1,608 / 1,608 (100%) | 2,788 | as above | Latin; every `pt` locale uses it | no | partial | 6–10 h |
-| Indonesian | `id` | 1,608 / 1,608 (100%) | 2,764 | as above | Latin | no | partial | 6–10 h |
-| Japanese | `ja` | 1,608 / 1,608 (100%) | 3,356 | as above | CJK fonts, IME (Windows IME broken, #590), vertical type (tategaki); installed Japanese fonts missing from the list (#2330) | no | partial | 10–16 h |
-| German | `de` | 1,608 / 1,608 (100%) | 2,400 | as above | Latin | no | partial | 6–10 h |
-| Korean | `ko` | 1,608 / 1,608 (100%) | 2,936 | as above; terminology from Photoshop's Korean UI ([notes](localization-ko.md)) | Hangul fonts, IME | no | partial | 6–10 h |
-| Vietnamese | `vi` | 0 (0%) | – | – | Latin with stacked diacritics (shaping supported) | no | none | 12–18 h |
+| French | `fr` | 1,758 / 1,772 (99.2%) | 2,981 | as above | Latin | no | partial | 6–10 h |
+| Portuguese (Brazil) | `pt-br` | 1,772 / 1,772 (100%) | 3,784 | as above | Latin; every `pt` locale uses it | no | partial | 6–10 h |
+| Indonesian | `id` | 1,758 / 1,772 (99.2%) | 2,979 | as above | Latin | no | partial | 6–10 h |
+| Japanese | `ja` | 1,772 / 1,772 (100%) | 3,579 | as above | CJK fonts, IME (Windows IME broken, #590), vertical type (tategaki) | no | partial | 10–16 h |
+| German | `de` | 1,772 / 1,772 (100%) | 2,634 | as above | Latin | no | partial | 6–10 h |
+| Korean | `ko` | 1,758 / 1,772 (99.2%) | 3,162 | as above; terminology from Photoshop's Korean UI ([notes](localization-ko.md)) | Hangul fonts, IME | no | partial | 6–10 h |
+| Vietnamese | `vi` | 1,772 / 1,772 (100%) | 3,426 | as above | Latin with stacked diacritics (shaping supported) | no | partial | 6–10 h |
 
 ## Other shipped languages
 
@@ -70,7 +72,6 @@ engine localization or native review is complete.
   submenus and document tabs stay left to right. UI labels also lack an Arabic fallback font, and
   egui 0.36 joins letters within a word but orders a line's words left to right (no bidi).
 - Web build: no browser-locale detection, no CJK web fonts.
-- WebAssembly plug-ins disappear from Filter › Plug-ins when the UI isn't English (#2540).
 - A user couldn't find the language option (#2532): it is in Preferences › Interface.
 
 ## Revision history
@@ -85,3 +86,4 @@ engine localization or native review is complete.
 | 2026-10-12 | minor | Added Turkish (`tr`) catalog with 100% measured UI coverage |
 | 2026-10-12 | minor | Italian native-speaker review: mistranslations (Trap, HDR Toning, Display Text) and phrasing fixed |
 | 2026-10-12 | minor | Serbian (`sr`, Latin, Ekavian) catalog: every measured key plus the dynamic labels of the other catalogs |
+| 2026-10-12 | minor | Re-measured with `cargo xtask i18n-coverage`: 1,772 keys; Vietnamese catalog shipped (100%, replaces "none"); Simplified Chinese, French, Indonesian and Korean at 1,758 of 1,772; plug-in menu rows stay in Filter › Plug-ins in every language (#2540, #2627) and installed Japanese fonts are listed on Linux (#2330, #2961) |
