@@ -840,9 +840,14 @@ impl Compositor {
 
     /// Drop GPU textures of a closed document.
     pub fn forget_doc(&mut self, doc: DocId) {
-        self.residents.retain(|_, r| r.doc != doc);
-        self.fx.retain(|_, e| e.doc != doc);
-        self.prefix.forget(doc);
+        self.retain_docs(|d| d != doc);
+    }
+
+    /// Drop GPU textures of every document `keep` rejects (closed documents).
+    pub fn retain_docs(&mut self, keep: impl Fn(DocId) -> bool) {
+        self.residents.retain(|_, r| keep(r.doc));
+        self.fx.retain(|_, e| keep(e.doc));
+        self.prefix.retain(keep);
     }
 
     /// GPU memory held by cached effect maps (bytes).

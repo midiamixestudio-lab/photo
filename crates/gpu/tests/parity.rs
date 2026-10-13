@@ -363,6 +363,12 @@ fn prefix_partial_damage_context_occlusion_and_budget_are_conservative() {
     g.comp.forget_doc(doc.id);
     assert_eq!(g.comp.composite_cache_bytes(), 0);
     check(&mut g, &doc, "after close/reopen");
+    // #4529: retain_docs keeps open documents and frees closed ones.
+    assert!(g.comp.resident_bytes() > 0);
+    g.comp.retain_docs(|d| d == doc.id);
+    assert!(g.comp.resident_bytes() > 0);
+    g.comp.retain_docs(|d| d != doc.id);
+    assert_eq!((g.comp.resident_bytes(), g.comp.composite_cache_bytes(), g.comp.fx_cache_bytes()), (0, 0, 0));
     g.comp.set_texture_limit(256);
     assert_eq!(g.comp.composite_cache_bytes(), 0);
     check(&mut g, &doc, "after paging change");

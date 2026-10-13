@@ -637,15 +637,12 @@ impl GpuCanvas {
     pub fn retain(&self, live: &[u64]) {
         let mut renderer = self.rs.renderer.write();
         let Some(res) = renderer.callback_resources.get_mut::<Resources>() else { return };
-        if res.docs.keys().any(|k| !live.contains(k)) {
-            let gone: Vec<u64> = res.docs.keys().filter(|k| !live.contains(k)).copied().collect();
-            if let Some(c) = res.compositor.as_mut() {
-                for k in &gone {
-                    c.forget_doc(photocraft_doc::DocId(*k));
-                }
-            }
-            res.docs.retain(|k, _| live.contains(k));
+        // Not keyed off `res.docs`: a failed or over-budget render drops a document's textures
+        // but keeps what the compositor already uploaded for it (#4529).
+        if let Some(c) = res.compositor.as_mut() {
+            c.retain_docs(|d| live.contains(&d.0));
         }
+        res.docs.retain(|k, _| live.contains(k));
         // LUTs and identity-transform signatures can outlive document textures. Prune both,
         // or a preserved-ID reopen can skip rebuilding a missing LUT.
         res.luts.retain(|k, _| live.contains(&k.0));
@@ -2172,6 +2169,45 @@ mod tests {
         let ram = detect_physical_memory().unwrap_or(0);
         assert!(ram >= 256 << 20, "{ram} bytes");
         assert!(ram < 1 << 50, "{ram} bytes");
+    }
+
+    /// #4529: GpuCanvas::retain must free compositor memory for documents removed from res.docs
+    /// before retain was called (failed DocTextures::new, over budget after a fresh render,
+    /// Canvas Size grew the document).
+    #[test]
+    fn retain_frees_compositor_memory_even_when_res_docs_is_already_empty() {
+        use photocraft_color::{ColorMode, SampleType};
+        use photocraft_compose::Buffer;
+        use photocraft_doc::{Document, Size};
+
+        let rs = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| egui_kittest::wgpu::create_render_state(wgpu_setup(), Default::default())));
+        let Ok(rs) = rs else {
+            eprintln!("skipping retain leak test: no GPU adapter");
+            return;
+        };
+        let gpu = GpuCanvas::new(&rs);
+        gpu.set_memory_budget(1 << 30);
+        gpu.set_composite_cache_budget(512 << 20);
+        let mut doc = Document::new("test", Size::new(512, 512), ColorMode::Rgb, SampleType::U8);
+        doc.layers.push(photocraft_doc::Layer::new(
+            "fill",
+            photocraft_doc::LayerContent::Fill(photocraft_doc::Fill::Solid(photocraft_color::Color::rgba(0.5, 0.5, 0.5, 1.0))),
+        ));
+        let key = doc.id.0;
+
+        // Composite uploads pages to the GPU.
+        assert!(gpu.composite(&doc, doc.bounds(), false).is_ok());
+        let (resident, cache) = gpu.compositor_bytes().unwrap();
+        assert!(resident > 0 || cache > 0, "compositor should hold memory after upload");
+
+        // Simulate the bug: one of the three paths removes res.docs entry but leaves compositor state.
+        gpu.rs.renderer.write().callback_resources.get_mut::<Resources>().unwrap().docs.remove(&key);
+
+        // Before the fix, this would not call c.forget_doc because the key isn't in res.docs any more.
+        gpu.retain(&[]);
+
+        // The fix calls c.retain_docs directly, so memory is freed even when res.docs is empty.
+        assert_eq!(gpu.compositor_bytes().unwrap(), (0, 0), "compositor memory should be freed");
     }
 
     #[test]

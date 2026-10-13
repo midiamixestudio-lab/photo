@@ -55,8 +55,8 @@ impl Prefix {
         self.bytes = 0;
     }
 
-    pub(crate) fn forget(&mut self, doc: photocraft_doc::DocId) {
-        if self.context.as_ref().is_some_and(|d| d.id == doc) {
+    pub(crate) fn retain(&mut self, keep: impl Fn(photocraft_doc::DocId) -> bool) {
+        if self.context.as_ref().is_some_and(|d| !keep(d.id)) {
             self.clear();
         }
     }
