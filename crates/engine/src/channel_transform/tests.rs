@@ -596,6 +596,46 @@ fn vacated_colour_uses_native_background_and_explicit_layer_bypasses_panel() {
 }
 
 #[test]
+fn named_layer_transforms_keep_upstream_relative_params_and_explicit_targets() {
+    for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+        for command in ["edit.transform", "edit.transform.flipHorizontal", "edit.transform.warp"] {
+            for isolated in [false, true] {
+                let mut named = session(ColorMode::Rgb, depth);
+                let mut numeric = session(ColorMode::Rgb, depth);
+                for s in [&mut named, &mut numeric] {
+                    s.execute("channel.target", json!({"channel":"green"})).unwrap();
+                }
+                let st = named.active().unwrap();
+                let id = st.active_layer.unwrap();
+                let name = st.doc.layer(id).unwrap().name.clone();
+                let before = surface(&named).try_to_interleaved(st.doc.bounds()).unwrap();
+                let mut p = match command {
+                    "edit.transform" => json!({"dx":2,"interpolation":"nearest"}),
+                    "edit.transform.warp" => {
+                        let frame = [0.0, 0.0, 12.0, 8.0];
+                        let mesh = BezierMesh::identity(frame, 1, 1).map_points(|p| [p[0] + 2.0, p[1]]);
+                        json!({"warp":Warp::custom(mesh,frame),"interpolation":"nearest"})
+                    }
+                    _ => json!({}),
+                };
+                if isolated {
+                    p["target"] = json!({"color":0});
+                }
+                p["layer"] = json!(name);
+                named.execute(command, p.clone()).unwrap();
+                p["layer"] = json!(numeric.active().unwrap().active_layer.unwrap().0);
+                numeric.execute(command, p).unwrap();
+                let bounds = named.active().unwrap().doc.bounds();
+                let got = surface(&named).try_to_interleaved(bounds).unwrap();
+                assert_eq!(got, surface(&numeric).try_to_interleaved(bounds).unwrap(), "{command}/{depth:?}/isolated={isolated}");
+                assert_ne!(got, before, "the named layer must be transformed");
+                assert_eq!(named.active().unwrap().channel_view.target, ChannelTarget::Color(1));
+            }
+        }
+    }
+}
+
+#[test]
 fn saved_channel_explicit_targets_need_no_active_layer() {
     for command in ["edit.transform", "edit.transform.flipHorizontal", "edit.transform.warp"] {
         let mut s = session(ColorMode::Rgb, SampleType::U8);
