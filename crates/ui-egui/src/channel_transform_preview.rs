@@ -170,8 +170,13 @@ mod tests {
         warp::{BezierMesh, Warp},
     };
 
+    // These oracles each submit thousands of readbacks. Overlapping their independent devices
+    // with the rest of the UI suite can crash the native driver at default test parallelism.
+    static GPU_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn gpu_sparse_and_high_frequency_channels_match_the_cpu_or_fall_back() {
+        let _gpu_test = GPU_TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let Ok(rs) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             egui_kittest::wgpu::create_render_state(crate::gpu_canvas::wgpu_setup(), Default::default())
         })) else {
@@ -272,6 +277,7 @@ mod tests {
 
     #[test]
     fn gpu_colour_preview_matches_cpu_for_depth_selection_geometry_and_eyes() {
+        let _gpu_test = GPU_TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let rs = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             egui_kittest::wgpu::create_render_state(crate::gpu_canvas::wgpu_setup(), Default::default())
         }));
@@ -318,7 +324,7 @@ mod tests {
                 let fill = [0.15, 0.35, 0.65, 1.0];
                 let mut fast = crate::channel_transform_gpu::Preview::new(&gpu, &doc, layer, fill).expect("GPU colour fast path");
                 let initial = a.ui.transform.clone().unwrap();
-                for (geometry, interpolation) in (0..8).flat_map(|g| ["nearest", "bilinear", "bicubic"].map(|i| (g, i))) {
+                for (geometry, interpolation) in (0..9).flat_map(|g| ["nearest", "bilinear", "bicubic"].map(|i| (g, i))) {
                     for component in 0..3 {
                         let mut t = initial.clone();
                         t.target = Some(json!({"color":component}));
@@ -336,9 +342,23 @@ mod tests {
                             7 => {
                                 t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1).map_points(|p| [p[0], p[1] + 0.02 * p[0] * p[0] / 32.0]), t.rect))
                             }
+                            8 => {
+                                let [x0, y0, x1, y1] = t.rect;
+                                let (w, h) = (x1 - x0, y1 - y0);
+                                t.quad = [[x0, y0], [x0 + 3.0 * w, y0], [x0 + 0.6 * w, y0 + 0.6 * h], [x0, y0 + 3.0 * h]];
+                            }
                             _ => {}
                         }
                         let mut oracle = Preview::new(&doc, layer, fill, false);
+                        if geometry == 8 {
+                            // The scalar engine rejects unbounded perspective geometry; neither
+                            // preview path may turn it into a wrapped or mirrored sample.
+                            let before = oracle.shown.clone();
+                            assert!(oracle.update(&t).unwrap_err().contains("perspective horizon"));
+                            assert!(Arc::ptr_eq(&before, &oracle.shown));
+                            assert!(fast.texture(&t, &st.channel_view, false, encode, 1).is_none());
+                            continue;
+                        }
                         oracle.update(&t).unwrap();
                         for visible in 0..8 {
                             let mut view = st.channel_view.clone();
@@ -354,7 +374,7 @@ mod tests {
                             for in_color in [false, true] {
                                 let texture = fast.texture(&t, &view, in_color, encode, 1);
                                 if (interpolation == "nearest" && geometry > 1) || (interpolation == "bicubic" && matches!(geometry, 2 | 4)) {
-                                    assert!(texture.is_none(), "fractional nearest sampling uses the CPU oracle");
+                                    assert!(texture.is_none(), "fractional nearest ties and Bicubic reductions use the CPU oracle");
                                     continue;
                                 }
                                 texture.unwrap();
@@ -421,6 +441,25 @@ mod tests {
         let mut app = PhotocraftApp::new(session, crate::Services::default());
         app.sync_views();
         app
+    }
+
+    #[test]
+    fn layer_style_cannot_implicitly_finish_an_isolated_channel_transform() {
+        let mut a = app();
+        a.run("channel.target", json!({"channel":"green"})).unwrap();
+        let ctx = egui::Context::default();
+        crate::transform_tool::begin(&mut a, &ctx).unwrap();
+        let before = a.session.active().unwrap().doc.clone();
+        let history = a.session.active().unwrap().history.entries();
+        let captured = a.ui.transform.clone();
+        assert!(crate::layer_style::open(&mut a, Some("dropShadow")).is_none());
+        assert!(a.ui.status.contains(photocraft_engine::channel_transform::LOCKED));
+        assert_eq!(a.ui.transform, captured);
+        assert!(Arc::ptr_eq(&before, &a.session.active().unwrap().doc));
+        assert_eq!(a.session.active().unwrap().history.entries(), history);
+        assert!(photocraft_engine::channel_transform::locked(&a.session));
+        crate::transform_tool::cancel(&mut a);
+        assert!(crate::layer_style::open(&mut a, Some("dropShadow")).is_some());
     }
 
     #[test]
@@ -661,6 +700,7 @@ mod tests {
                         ("channel.delete", json!({"channel":0})),
                         ("layer.delete", json!({})),
                         ("select.editInQuickMaskMode", json!({})),
+                        ("history.selectState", json!({"state":0})),
                     ] {
                         assert!(a.run(cmd, p).is_err(), "{cmd}");
                         assert_eq!(a.ui.transform.as_ref().unwrap().quad, t.quad);

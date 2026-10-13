@@ -304,6 +304,8 @@ fn interactive_guard_preserves_document_and_history_for_every_undo_entry_point()
             assert!(!s.is_enabled(id), "{id}");
             assert!(s.execute(id, json!({})).unwrap_err().to_string().contains(LOCKED));
         }
+        assert!(!s.is_enabled("history.selectState"));
+        assert!(s.execute("history.selectState", json!({"state":0})).unwrap_err().to_string().contains(LOCKED));
         assert!(!if redo { s.redo() } else { s.undo() });
         let st = s.active().unwrap();
         assert!(Arc::ptr_eq(&before, &st.doc));

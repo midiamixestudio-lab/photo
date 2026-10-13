@@ -173,20 +173,26 @@ fn corners(r: [f64; 4]) -> [[f64; 2]; 4] {
 /// Start Free Transform on the active layer or its selected pixels, or on the captured
 /// colour component, raster mask, alpha/spot channel or Quick Mask.
 pub fn begin(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), String> {
+    begin_with_params(app, ctx, json!({}))
+}
+
+fn begin_with_params(app: &mut PhotocraftApp, ctx: &egui::Context, params: serde_json::Value) -> Result<(), String> {
     if app.session.active().is_some_and(|st| st.channel_transform.is_some()) {
         return Err(photocraft_engine::channel_transform::LOCKED.into());
     }
     if app.session.active_job().is_some() {
         return Err("Wait for the document operation to finish before starting a transform".into());
     }
-    if let Some((params, path)) = crate::vector_ui::free_transform_path(app) {
+    if params.get("layer").is_none()
+        && let Some((params, path)) = crate::vector_ui::free_transform_path(app)
+    {
         return begin_path(app, ctx, params, path);
     }
     if app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_some()) {
         app.run("select.drop", json!({}))?;
     }
-    let mut params = photocraft_engine::channel_transform::params(&app.session, &json!({})).map_err(|e| e.to_string())?;
-    if params["target"] == "pixels" && crate::canvas::paint_target(app) == "mask" {
+    let mut params = photocraft_engine::channel_transform::params(&app.session, &params).map_err(|e| e.to_string())?;
+    if params.get("layer").is_none() && params["target"] == "pixels" && crate::canvas::paint_target(app) == "mask" {
         // Layers thumbnail targeting is a fallback; a visible mask overlay never overrides
         // a colour component explicitly selected in Channels.
         params["target"] = json!("mask");
@@ -304,7 +310,9 @@ pub fn begin_copy(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), St
 /// Free Transform on the layer a file dropped on the canvas just placed, like the reference app's
 /// Place: Esc takes the place back, ↩ makes the place and the transform one Place Embedded step.
 pub fn begin_placed(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), String> {
-    begin(app, ctx)?;
+    let layer = app.session.active().and_then(|st| st.active_layer).ok_or("no active layer")?;
+    // Placement explicitly transforms the new layer, regardless of the previous channel target.
+    begin_with_params(app, ctx, json!({"layer":layer.0}))?;
     if let Some(t) = app.ui.transform.as_mut() {
         t.made = Some(MadeLayer::Place);
     }
