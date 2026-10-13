@@ -117,6 +117,7 @@ pub mod layer_row_ui;
 pub mod layer_style;
 mod layer_transfer;
 pub mod layer_tree_ui;
+pub mod layers_panel_ui;
 mod layout_keys;
 pub mod links;
 pub mod liquify_ui;
@@ -543,6 +544,10 @@ pub struct PhotocraftApp {
     pub(crate) object_finder: Option<object_finder::Finder>,
     /// A blend mode hovered in the Layers panel, shown live (`blend_preview`).
     pub(crate) blend_preview: Option<blend_preview::BlendPreview>,
+    /// Layers panel drag: temporary reordered document displayed until mouse release.
+    pub(crate) reorder_preview: Option<layers_panel_ui::ReorderPreview>,
+    /// Whether the currently dragged layer is over a valid destination this frame.
+    pub(crate) reorder_preview_hit: bool,
     /// Patch Tool drag: the healed document at the pointer (`patch_preview`).
     pub(crate) patch_preview: Option<patch_preview::PatchPreview>,
     /// Content-Aware Move drag or box shown with its result (`cam_preview`).
@@ -787,6 +792,8 @@ impl PhotocraftApp {
             move_hover: None,
             object_finder: None,
             blend_preview: None,
+            reorder_preview: None,
+            reorder_preview_hit: false,
             patch_preview: None,
             cam_preview: None,
             magnetic: Default::default(),
@@ -891,6 +898,7 @@ impl PhotocraftApp {
         };
         // Saved preferences are in place before the first frame; recovery starts in upkeep.
         prefs_ui::load(&mut app);
+        layers_panel_ui::restore_options(&mut app);
         // After the saved preferences, which say whether the set was already offered.
         kys_import::offer_import(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
@@ -1853,6 +1861,7 @@ impl eframe::App for PhotocraftApp {
         workspace_ui::windows(self, &ctx);
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        layers_panel_ui::show_dialog(self, &ctx);
         rasterize_prompt::run_pending(self, &ctx);
         jobs_ui::dialog(self, &ctx);
         discard_ui::show(self, &ctx);
@@ -2051,7 +2060,13 @@ impl PhotocraftApp {
     pub fn layer_thumb(&mut self, ctx: &egui::Context, doc: &Document, layer: &photocraft_doc::Layer) -> egui::TextureId {
         // Key by content, not document revision: COW tiles change pointer only when their pixels
         // change, so unrelated edits (e.g. painting another layer) don't rebuild this thumbnail.
-        let rev = layer.surface().map_or(0, surface_fingerprint) ^ (doc.size.width as u64) << 40;
+        let mode = self.ui.layers_panel_options.thumbnail_contents;
+        let region = layers_panel_ui::thumbnail_region(self, doc, layer, mode);
+        let rev = layer.surface().map_or(0, surface_fingerprint)
+            ^ (region.x0 as i64 as u64).rotate_left(9)
+            ^ (region.y0 as i64 as u64).rotate_left(21)
+            ^ (region.width() as u64).rotate_left(33)
+            ^ (region.height() as u64).rotate_left(45);
         let key = (layer.id, mask_thumbs_ui::THUMB_LAYER);
         if let Some((r, tex)) = self.thumbs.get(&key)
             && *r == rev
@@ -2059,7 +2074,7 @@ impl PhotocraftApp {
             return tex.id();
         }
         let mut px = [0.0f32; 8];
-        let img = thumb_image(doc, 64, |x, y| {
+        let img = thumb_image_region(region, 64, |x, y| {
             let Some(s) = layer.surface() else { return [0.0; 4] };
             let n = s.channels();
             s.read_pixel(x, y, &mut px[..n]);
@@ -2100,7 +2115,7 @@ impl PhotocraftApp {
             return tex.id();
         }
         let mut v = [0.0f32; 1];
-        let img = thumb_image(doc, 64, |x, y| {
+        let img = thumb_image_region(doc.bounds(), 64, |x, y| {
             mask.surface.read_pixel(x, y, &mut v);
             [v[0], v[0], v[0], 1.0]
         });
@@ -2139,9 +2154,9 @@ pub fn surface_fingerprint(s: &photocraft_raster::Surface) -> u64 {
     h
 }
 
-/// Square thumbnail of the canvas area, letterboxed, sampling `f(x, y)` in document space.
-fn thumb_image(doc: &Document, side: usize, mut f: impl FnMut(i32, i32) -> [f32; 4]) -> egui::ColorImage {
-    let (w, h) = (doc.size.width.max(1) as f32, doc.size.height.max(1) as f32);
+/// Sample a thumbnail from an arbitrary document-space region (Layer Bounds or Entire Document).
+fn thumb_image_region(region: photocraft_geom::Rect, side: usize, mut f: impl FnMut(i32, i32) -> [f32; 4]) -> egui::ColorImage {
+    let (w, h) = (region.width().max(1) as f32, region.height().max(1) as f32);
     let scale = w.max(h) / side as f32;
     let (ox, oy) = ((side as f32 - w / scale) / 2.0, (side as f32 - h / scale) / 2.0);
     let mut px = vec![egui::Color32::TRANSPARENT; side * side];
@@ -2152,7 +2167,7 @@ fn thumb_image(doc: &Document, side: usize, mut f: impl FnMut(i32, i32) -> [f32;
             if dx < 0.0 || dy < 0.0 || dx >= w || dy >= h {
                 continue;
             }
-            let c = f(dx as i32, dy as i32);
+            let c = f(region.x0.saturating_add(dx as i32), region.y0.saturating_add(dy as i32));
             let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
             px[ty * side + tx] = egui::Color32::from_rgba_unmultiplied(q(c[0]), q(c[1]), q(c[2]), q(c[3]));
         }
