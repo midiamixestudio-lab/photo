@@ -316,6 +316,65 @@ fn clipping_mask_restricts_to_base_alpha() {
     assert!(close4(px(&d, 6, 1), [1.0; 4]), "outside base: clipped layer hidden");
 }
 
+/// #3052 / #4921: clipped Dissolve must apply layer Opacity × Fill as binary coverage,
+/// restricted to the clipping base's shape.
+#[test]
+fn clipped_dissolve_opacity_fill_is_binary_and_preserves_base_shape() {
+    let mut d = doc_white(40, 12);
+    d.layers.push(solid_layer("base", Rect::new(0, 0, 20, 12), [0.0, 0.0, 1.0, 1.0]));
+    let mut clip = solid_layer("clip", d.bounds(), [1.0, 0.0, 0.0, 1.0]);
+    clip.clipped = true;
+    clip.blend = BlendMode::Dissolve;
+    clip.opacity = 0.6;
+    clip.fill_opacity = 0.5;
+    d.layers.push(clip);
+    let mut red = 0;
+    let mut blue = 0;
+    for y in 0..12 {
+        for x in 0..20 {
+            let p = px(&d, x, y);
+            if close4(p, [1.0, 0.0, 0.0, 1.0]) {
+                red += 1;
+            } else {
+                assert!(close4(p, [0.0, 0.0, 1.0, 1.0]), "Dissolve must not interpolate: {p:?} at ({x},{y})");
+                blue += 1;
+            }
+        }
+        assert!(close4(px(&d, 30, y), [1.0; 4]), "outside the base the clip is invisible");
+    }
+    assert!(red > 0 && blue > 0, "Dissolve must expose both source and base: {red}/{blue}");
+    assert!((red as f32 / (red + blue) as f32 - 0.3).abs() < 0.1, "coverage should follow 60% opacity × 50% fill: {red}/{blue}");
+}
+
+/// Dissolve noise uses document coordinates, not the region origin; checked across
+/// negative coordinates, tile boundaries, and all supported RGB sample depths.
+#[test]
+fn clipped_dissolve_matches_whole_render_at_offset_regions_and_depths() {
+    for fmt in [PixelFormat::RGBA8, PixelFormat::RGBA16, PixelFormat::RGBA32F] {
+        let mut d = Document::new("coverage", Size::new(32, 18), ColorMode::Rgb, fmt.sample);
+        let bounds = Rect::new(-3, -2, 32, 18);
+        let mut base = Layer::raster("base", fmt);
+        base.surface_mut().unwrap().fill_rect(bounds, &[0.0, 0.0, 1.0, 0.5]);
+        d.layers.push(base);
+        let mut clip = Layer::raster("clip", fmt);
+        clip.surface_mut().unwrap().fill_rect(bounds, &[1.0, 0.0, 0.0, 0.75]);
+        clip.clipped = true;
+        clip.blend = BlendMode::Dissolve;
+        clip.opacity = 0.6;
+        clip.fill_opacity = 0.5;
+        d.layers.push(clip);
+        let whole = render(&d, bounds);
+        for region in [Rect::new(-3, -2, 5, 4), Rect::new(5, 4, 17, 11), Rect::new(17, 11, 32, 18)] {
+            let part = render(&d, region);
+            for y in region.y0..region.y1 {
+                for x in region.x0..region.x1 {
+                    assert!(close4(part.get(x, y), whole.get(x, y)), "{fmt:?}: region mismatch at ({x},{y})");
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn hidden_base_hides_clipping_group() {
     let mut d = doc_white(4, 4);
@@ -2445,6 +2504,62 @@ fn outer_glow_does_not_paint_through_a_zero_fill_layer() {
         let opaque = px(&d, 48, 48);
         assert!(opaque[0] > 0.9 && opaque[1] > 0.8, "{technique:?}: opaque fill disappeared: {opaque:?}");
     }
+}
+
+#[test]
+fn dissolve_adjustment_resolves_opacity_to_binary_coverage() {
+    let mut d = doc_white(16, 16);
+    let mut layer = Layer::new("Invert", LayerContent::Adjustment(Adjustment::Invert));
+    layer.blend = BlendMode::Dissolve;
+    layer.opacity = 0.5;
+    d.layers.push(layer);
+    let pixels = render(&d, d.bounds()).px;
+    let black = pixels.iter().filter(|p| p[0] < 0.01).count();
+    let white = pixels.iter().filter(|p| p[0] > 0.99).count();
+    assert!(black > 0 && white > 0, "Dissolve must select both original and adjusted pixels");
+    assert_eq!(black + white, pixels.len(), "no intermediate gray pixels");
+    d.layers.last_mut().unwrap().blend = BlendMode::Normal;
+    let continuous = render(&d, d.bounds()).px;
+    assert!(continuous.iter().all(|p| (p[0] - 0.5).abs() < E), "Normal remains continuously interpolated");
+}
+
+#[test]
+fn clipped_dissolve_fill_matches_opaque_unclipped_coverage() {
+    let mut d = doc_white(16, 16);
+    let mut fill = Layer::new("Black", LayerContent::Fill(Fill::Solid(Color::BLACK)));
+    fill.blend = BlendMode::Dissolve;
+    fill.opacity = 0.5;
+    d.layers.push(fill);
+    let control = render(&d, d.bounds()).px;
+    d.layers.last_mut().unwrap().clipped = true;
+    let clipped = render(&d, d.bounds()).px;
+    assert_eq!(clipped, control, "clipping over a fully opaque base must preserve dissolve pixels");
+    let black = clipped.iter().filter(|p| p[0] < 0.01).count();
+    assert!(black > 0 && black < clipped.len());
+    d.layers.last_mut().unwrap().blend = BlendMode::Normal;
+    let continuous = render(&d, d.bounds()).px;
+    assert!(continuous.iter().all(|p| (p[0] - 0.5).abs() < E));
+}
+
+#[test]
+fn dissolve_color_overlay_preserves_binary_layer_coverage() {
+    let mut d = doc_white(16, 16);
+    let mut layer = Layer::new("Black", LayerContent::Fill(Fill::Solid(Color::BLACK)));
+    layer.blend = BlendMode::Dissolve;
+    layer.opacity = 0.5;
+    d.layers.push(layer);
+    let control = render(&d, d.bounds()).px;
+    d.layers
+        .last_mut()
+        .unwrap()
+        .effects
+        .items
+        .push(photocraft_doc::Effect::ColorOverlay { common: photocraft_doc::FxCommon::new(BlendMode::Normal, 1.0), color: Color::BLACK });
+    let styled = render(&d, d.bounds()).px;
+    assert_eq!(styled, control, "an identity overlay should not turn dissolve pixels gray");
+    d.layers.last_mut().unwrap().blend = BlendMode::Normal;
+    let continuous = render(&d, d.bounds()).px;
+    assert!(continuous.iter().all(|p| (p[0] - 0.5).abs() < E));
 }
 
 // Lab documents: Invert mirrors L, a and b; Threshold splits on L with a neutral result; Gradient

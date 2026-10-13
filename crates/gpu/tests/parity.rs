@@ -637,6 +637,19 @@ fn groups_masks_and_clipping() {
         d.layers.extend([base, c1, c2]);
         check(&mut g, &d, &format!("clipping hidden={hidden}"));
     }
+    // #3052/#4921: a clipped Dissolve layer retains opacity/fill binary coverage
+    // across the partially covered clipping base; the GPU must match the CPU.
+    for (opacity, fill) in [(0.4, 1.0), (0.8, 0.5)] {
+        let mut d = base_doc(56, 44);
+        let base = noise_layer("base", PixelFormat::RGBA8, Rect::new(5, 6, 48, 40), 45, 0.0);
+        let mut clip = noise_layer("dissolve clip", PixelFormat::RGBA8, d.bounds(), 46, 0.0);
+        clip.clipped = true;
+        clip.blend = BlendMode::Dissolve;
+        clip.opacity = opacity;
+        clip.fill_opacity = fill;
+        d.layers.extend([base, clip]);
+        check(&mut g, &d, "clipped Dissolve opacity/fill CPU/GPU parity");
+    }
     // Clipped group base (isolated) with a clipped layer.
     let mut d = base_doc(56, 44);
     let mut gb = Layer::group("gb", vec![child(18, BlendMode::Normal)]);
@@ -2435,4 +2448,43 @@ fn the_focused_view_stays_resident_after_a_full_refresh() {
         let cpu = photocraft_compose::render(&d, view);
         assert!(worst_diff(&cpu.px, &out).0 <= TOL);
     }
+}
+
+/// An adjustment has no standalone source alpha: its opacity and mask gate binary coverage.
+#[test]
+fn dissolve_adjustment_matches_cpu() {
+    let Some(mut g) = gpu() else { return };
+    let mut d = base_doc(64, 48);
+    let mut adjustment = Layer::new("invert", LayerContent::Adjustment(Adjustment::Invert));
+    adjustment.blend = BlendMode::Dissolve;
+    adjustment.opacity = 0.5;
+    adjustment.mask = Some(mask(Rect::new(0, 0, 32, 48), 31, 0.0));
+    d.layers.push(adjustment);
+    check(&mut g, &d, "dissolve adjustment + mask");
+}
+
+/// Clipped pixels still use document-positioned noise, without changing the base alpha.
+#[test]
+fn dissolve_clipped_layer_matches_cpu() {
+    let Some(mut g) = gpu() else { return };
+    let mut d = base_doc(64, 48);
+    let mut clipped = Layer::new("clipped", LayerContent::Fill(Fill::Solid(Color::BLACK)));
+    clipped.clipped = true;
+    clipped.blend = BlendMode::Dissolve;
+    clipped.opacity = 0.5;
+    d.layers.push(clipped);
+    check(&mut g, &d, "dissolve clipped");
+}
+
+/// Layer opacity gates the completed effects stack, instead of fading its pixels.
+#[test]
+fn dissolve_effects_stack_matches_cpu() {
+    let Some(mut g) = gpu() else { return };
+    let mut d = base_doc(64, 48);
+    let mut styled = Layer::new("styled", LayerContent::Fill(Fill::Solid(Color::BLACK)));
+    styled.blend = BlendMode::Dissolve;
+    styled.opacity = 0.5;
+    styled.effects.items.push(Effect::ColorOverlay { common: FxCommon::new(BlendMode::Normal, 1.0), color: Color::BLACK });
+    d.layers.push(styled);
+    check(&mut g, &d, "dissolve effects");
 }
