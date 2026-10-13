@@ -4651,6 +4651,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "photocraft-web-boot"
+version = "0.8.2"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "pico-args"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
