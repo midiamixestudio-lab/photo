@@ -3834,5 +3834,6 @@ curves	Smooth	Згладити
 	Action playback stopped	Відтворення операції зупинено
 	Step {step} is waiting for its dialog	Крок {step} очікує на свій діалог
 @plural	{n} action|{n} actions	{n} операція|{n} операції|{n} операцій
+	Background (Default)	Фон (типовий)
 	Auto Add/Delete	Автододавання/видалення
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
