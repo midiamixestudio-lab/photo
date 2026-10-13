@@ -924,6 +924,9 @@ pub struct GpuInfo {
     pub canvas: String,
     /// Why the GPU canvas was dropped during this session (device lost or a GPU error).
     pub lost: Option<String>,
+    /// The window's present mode and queued frames ("mailbox, 1 frame"; "" when the shell
+    /// doesn't choose them).
+    pub present: String,
 }
 
 impl GpuInfo {
@@ -982,6 +985,9 @@ impl GpuInfo {
                 crate::i18n::fmt(tl!(template), &[("renderer", tl!(renderer))])
             },
         ];
+        if !self.present.is_empty() {
+            v.push(format!("Presentation: {}", self.present));
+        }
         if let Some(f) = &self.fallback {
             v.push({
                 let template = "Fallback: {reason}";
