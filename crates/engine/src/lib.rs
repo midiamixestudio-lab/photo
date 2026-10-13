@@ -709,7 +709,7 @@ impl Session {
 
     /// Apply an undoable edit to the active document.
     pub fn edit<R>(&mut self, label: &str, f: impl FnOnce(&mut Document, &mut Option<LayerId>) -> Result<R>) -> Result<R> {
-        if self.active().is_some_and(|st| st.channel_transform.is_some()) {
+        if channel_transform::locked(self) {
             return Err(EngineError::Other(channel_transform::LOCKED.into()));
         }
         let restrict = self.color_restrict;
@@ -779,8 +779,9 @@ impl Session {
 
     /// Replace the active document's active layer without creating a history step.
     pub fn select_layer(&mut self, id: LayerId) -> Result<()> {
+        let target_locked = channel_transform::locked(self);
         let st = self.active_mut().ok_or(EngineError::NoDocument)?;
-        if st.channel_transform.is_some() && st.active_layer != Some(id) {
+        if target_locked && st.active_layer != Some(id) {
             return Err(EngineError::Other(channel_transform::LOCKED.into()));
         }
         if st.doc.layer(id).is_none() {

@@ -1273,7 +1273,8 @@ fn box_preset(id: &str) -> Option<(f64, f64, f64)> {
 /// `None` for other commands or when not transforming.
 /// The commands the open box answers itself ([`is_enabled`], [`intercept`]).
 fn box_command(id: &str) -> bool {
-    matches!(id, "edit.undo" | "edit.redo" | "history.undo" | "history.redo" | "edit.toggleLastState" | "edit.contentAwareScale" | "edit.puppetWarp") || box_preset(id).is_some()
+    matches!(id, "edit.undo" | "edit.redo" | "history.undo" | "history.redo" | "edit.toggleLastState" | "edit.contentAwareScale" | "edit.puppetWarp")
+        || box_preset(id).is_some()
 }
 
 pub fn intercept(app: &mut PhotocraftApp, id: &str) -> Option<Result<serde_json::Value, String>> {

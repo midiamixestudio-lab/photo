@@ -20,9 +20,16 @@ pub struct Guard {
 pub const LOCKED: &str = "Commit or cancel the channel transform before changing its target or document pixels";
 pub const HIDDEN: &str = "Show the selected channel using its eye before starting a transform";
 
+/// The captured target stays locked until its background commit has ended too.
+pub fn locked(s: &Session) -> bool {
+    s.active().is_some_and(|st| st.channel_transform.is_some()) || s.channel_transform_running()
+}
+
 /// View commands remain available. Pixel/structural edits cannot invalidate the captured source.
 pub(crate) fn refusal(s: &Session, id: &str, params: &Value, journal: bool) -> Option<&'static str> {
-    s.active()?.channel_transform.as_ref()?;
+    if !locked(s) {
+        return None;
+    }
     (journal && id != "channel.setVisible" && !crate::warp_cmds::inline_edit(id, params)
         || id.starts_with("channel.target")
         || id.starts_with("layer.select")

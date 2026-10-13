@@ -211,7 +211,7 @@ mod tests {
                     let fill = [1.0; 4];
                     let mut fast = crate::channel_transform_gpu::Preview::new(&gpu, doc, st.active_layer, fill).unwrap();
                     for interpolation in ["bilinear", "bicubic"] {
-                        for geometry in 0..8 {
+                        for geometry in 0..10 {
                             let mut t = a.ui.transform.clone().unwrap();
                             t.interpolation = interpolation.into();
                             let factor = if geometry == 4 { 3 } else { 1 };
@@ -234,6 +234,10 @@ mod tests {
                                     t.quad = t.quad.map(|[x, y]| [x + 3.0, y + 2.0]);
                                     t.warp = Some(Warp::custom(BezierMesh::identity(t.rect, 1, 1), t.rect));
                                 }
+                                8 | 9 => {
+                                    let scale = if geometry == 8 { 0.75 } else { 0.998 };
+                                    t.quad = t.quad.map(|[x, y]| [x * scale, y * scale]);
+                                }
                                 _ => {
                                     t.rect = if geometry == 6 { [-4.0, -4.0, 36.0, 28.0] } else { [4.0, 4.0, 28.0, 20.0] };
                                     let [x0, y0, x1, y1] = t.rect;
@@ -242,7 +246,7 @@ mod tests {
                                 }
                             }
                             let texture = fast.texture(&t, &st.channel_view, false, false, factor);
-                            if geometry == 1 || (geometry == 6 && selection == 0) || geometry == 7 {
+                            if geometry == 1 || (geometry == 6 && selection == 0) || geometry == 7 || (geometry >= 8 && interpolation == "bicubic") {
                                 assert!(texture.is_none(), "shrinking or explicitly clipped Warp needs the CPU oracle");
                                 continue;
                             }
@@ -349,7 +353,7 @@ mod tests {
                             view.clone_from(&session.active().unwrap().channel_view);
                             for in_color in [false, true] {
                                 let texture = fast.texture(&t, &view, in_color, encode, 1);
-                                if interpolation == "nearest" && geometry > 1 {
+                                if (interpolation == "nearest" && geometry > 1) || (interpolation == "bicubic" && matches!(geometry, 2 | 4)) {
                                     assert!(texture.is_none(), "fractional nearest sampling uses the CPU oracle");
                                     continue;
                                 }

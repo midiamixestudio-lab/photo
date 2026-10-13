@@ -268,15 +268,16 @@ impl Preview {
             frame
         };
         let source_rect = [source_bounds.x0, source_bounds.y0, source_bounds.x1, source_bounds.y1].map(f64::from);
-        // The CPU oracle prefilters strong reductions. Retain it until that filter is on GPU.
-        if h.local_scale((source_rect[0] + source_rect[2]) * 0.5, (source_rect[1] + source_rect[3]) * 0.5) < 0.5 {
-            return None;
-        }
         let mut interp = match t.interpolation.as_str() {
             "nearest" => 0.0,
             "bilinear" => 1.0,
             _ => 2.0,
         };
+        // Affine/projective Bicubic now prefilters even mild reductions on the CPU. Warp has
+        // its own per-triangle footprint filter below; Bilinear samples the source directly.
+        if t.warp.is_none() && interp == 2.0 && h.local_scale((source_rect[0] + source_rect[2]) * 0.5, (source_rect[1] + source_rect[3]) * 0.5) < 0.999 {
+            return None;
+        }
         let m = h.0;
         let integer_translation = t.warp.is_none()
             && m.iter().all(|v| v.is_finite())

@@ -55,8 +55,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     };
     let doc = st.doc.clone();
     let view = st.channel_view.clone();
-    let target_locked = st.channel_transform.is_some()
-        || (crate::transform_tool::committing(app).is_some() && app.ui.transform.as_ref().is_some_and(|t| t.target.is_some()));
+    let target_locked = photocraft_engine::channel_transform::locked(&app.session);
     // ⌥-click mask view (#196): gray shows the mask alone (colour eyes off), overlay over the composite.
     let mask_view = photocraft_engine::mask_view_cmds::current(st).map(|v| v.mode);
     let gray_view = mask_view == Some(photocraft_engine::mask_view_cmds::MaskViewMode::Gray);

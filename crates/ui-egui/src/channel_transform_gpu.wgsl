@@ -27,7 +27,8 @@ fn lifted(at: vec2<i32>) -> vec2<f32> {
 }
 fn cubic(t: f32) -> vec4<f32> {
     let t2 = t * t; let t3 = t2 * t;
-    return vec4(-0.5*t3+t2-0.5*t, 1.5*t3-2.5*t2+1.0, -1.5*t3+2.0*t2+0.5*t, 0.5*t3-0.5*t2);
+    // Match transform::bicubic: Keys a = -0.75, including Warp's scalar sampler.
+    return vec4(-0.75*t3+1.5*t2-0.75*t, 1.25*t3-2.25*t2+1.0, -1.25*t3+1.5*t2+0.75*t, 0.75*t3-0.75*t2);
 }
 fn sample_at(at: vec2<f32>) -> vec2<f32> {
     if p.opts.x == 0.0 { return lifted(vec2<i32>(floor(at + 0.5))); }
