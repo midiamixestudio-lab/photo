@@ -3869,3 +3869,23 @@ cameraData	Lens	Lens
 	Ink Characteristics	Mürekkep Özellikleri
 	Solidity:	Doluluk:
 	Redrawing	Yeniden çiziliyor
+
+# Layers panel options and Smart Filter editors
+	Add “copy” to Copied Layers and Groups	Kopyalanan Katman ve Gruplara “kopya” Ekle
+	Animation Options	Animasyon Seçenekleri
+	Entire Document	Tüm Belge
+	Expand New Effects	Yeni Efektleri Genişlet
+	Filter Options	Filtre Seçenekleri
+	Layer Bounds	Katman Sınırları
+	Layers Panel Options	Katmanlar Paneli Seçenekleri
+	New Artboard…	Yeni Çalışma Yüzeyi…
+	New Group…	Yeni Grup…
+	Prevent Auto-Nesting	Otomatik Yerleştirmeyi Önle
+	Preview on canvas when reordering layers	Katmanları yeniden sıralarken kanvasta önizle
+	Show Layers	Katmanları Göster
+	Show layer mask badges	Katman maskesi rozetlerini göster
+	Thumbnail Contents	Küçük Resim İçeriği
+	Thumbnail Size	Küçük Resim Boyutu
+
+# Layers panel options and Smart Filter editors
+	Use Default Masks on Fill Layers	Dolgu Katmanlarında Varsayılan Maskeleri Kullan

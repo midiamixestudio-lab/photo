@@ -3624,3 +3624,24 @@ curves	Smooth	Làm mượt
 	Choose a gradient file (.grd).	Chọn tệp chuyển sắc (.grd).
 	Auto Add/Delete	Tự động thêm/xóa
 	ICO is limited to 256 × 256 pixels	ICO giới hạn ở 256 × 256 pixel
+
+# Layers panel options and Smart Filter editors
+	Add “copy” to Copied Layers and Groups	Thêm “bản sao” vào lớp và nhóm được sao chép
+	Animation Options	Tùy chọn hoạt ảnh
+	Entire Document	Toàn bộ tài liệu
+	Expand New Effects	Mở rộng hiệu ứng mới
+	Filter Options	Tùy chọn bộ lọc
+	Layer Bounds	Đường biên lớp
+	Layers Panel Options	Tùy chọn bảng Lớp
+	New Artboard…	Bảng vẽ mới…
+	New Group…	Nhóm mới…
+	Panel Options…	Tùy chọn bảng…
+	Prevent Auto-Nesting	Chặn tự lồng
+	Preview on canvas when reordering layers	Xem trước trên Canvas khi sắp xếp lại lớp
+	Show Layers	Hiện các lớp
+	Show layer mask badges	Hiện huy hiệu mặt nạ lớp
+	Thumbnail Contents	Nội dung hình thu nhỏ
+	Thumbnail Size	Kích thước hình thu nhỏ
+
+# Layers panel options and Smart Filter editors
+	Use Default Masks on Fill Layers	Dùng mặt nạ mặc định cho lớp tô
