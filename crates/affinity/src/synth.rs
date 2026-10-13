@@ -24,6 +24,8 @@ pub enum F {
     /// Array of fixed-size records, all `size` bytes.
     Records(u16, Vec<Vec<u8>>),
     U8s(Vec<u8>),
+    /// Opaque byte blob (embedded original image).
+    Blob(Vec<u8>),
     Entry(String),
     /// Shared object: `Def` defines id with class chain and fields, `Ref` links back.
     Def(u32, Vec<Tag>, Vec<(Tag, F)>),
@@ -63,6 +65,7 @@ fn code(f: &F) -> u8 {
         F::Struct(b) => 0x34 + b.len() as u8,
         F::Records(..) => 0x80 | 0x2c,
         F::U8s(_) => 0x80 | 0x01,
+        F::Blob(_) => 0x2d,
         F::Entry(_) => 0x33,
         F::Def(..) | F::Ref(_) => 0x31,
         F::Null => 0x31,
@@ -97,7 +100,7 @@ fn payload(out: &mut Vec<u8>, f: &F) {
             out.extend(size.to_le_bytes());
             recs.iter().for_each(|r| out.extend(r));
         }
-        F::U8s(v) => {
+        F::Blob(v) | F::U8s(v) => {
             out.extend((v.len() as u32).to_le_bytes());
             out.extend(v);
         }

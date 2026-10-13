@@ -1,6 +1,6 @@
 # File-format parity
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (palette PNGs open in Indexed Color mode, #4804; earlier: CMYK Invert, Posterize and Threshold on the inks; 16-bit Lab Invert; Photoshop-oracle floor 145/258; `.atn` import maps 112 events; DDS textures open, #1327; DPX read and write, #1049; #2465 fixed: CS2 placed layers with only a `PlLd` block open their contents; Photoshop Actions `.atn` read and write; `.shc` contour files read and write; earlier the same day: indexed BMP palette mode; Save keeps a JPEG's quality and a WebP's encoding) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (Affinity RGB16 precision and source-backed raster recovery; palette PNGs open in Indexed Color mode, #4804; earlier: CMYK Invert, Posterize and Threshold on the inks; 16-bit Lab Invert; Photoshop-oracle floor 145/258; `.atn` import maps 112 events; DDS textures open, #1327; DPX read and write, #1049; #2465 fixed: CS2 placed layers with only a `PlLd` block open their contents; Photoshop Actions `.atn` read and write; `.shc` contour files read and write; earlier the same day: indexed BMP palette mode; Save keeps a JPEG's quality and a WebP's encoding) · **Target:** Adobe Photoshop 2026
 
 Every format Photoshop 2026 (27.11.0) reads or writes, with PhotoCraft's support, fidelity and
 tests. Photoshop's list comes from its `Info.plist` `CFBundleDocumentTypes`, the PiPL read/write
@@ -94,6 +94,15 @@ D5100 colour profile. Counts and the G14 estimate are unchanged.
 | Krita `.kra`, GIMP `.xcf`, Procreate | no | no | Not in Photoshop either |
 
 ### Affinity import notes (moved from `roadmap.md`)
+
+2026-10-11: Affinity RGB16 pixel import retains 16-bit samples, including masks and
+premultiplied-alpha resampling. Complete source-backed RGB8/RGB16 pixel layers recover their
+embedded original instead of importing empty, and remain raster layers. An original RGB16 TIFF
+opened and saved in Affinity 3.3.0 imports all 65,536 RGBA samples exactly; twelve original
+synthetic regressions cover storage, edits, depth, alpha, invalid originals, profiles and saves.
+Mixed source/edited tiles, RGB32 pixels and document colour-profile mapping remain unsupported
+or approximated with warnings. No proprietary code or locally application-made files are committed.
+
 
 2026-10-08: Affinity `.af`, `.afdesign`, `.afphoto` and `.afpub` documents (container versions
 8–12) open **natively** ([format notes](../crates/affinity/README.md)): pages and artboards, layers

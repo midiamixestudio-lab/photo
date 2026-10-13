@@ -76,6 +76,55 @@ fn preview(name: &str, bytes: &[u8], native: &photocraft_affinity::Error) -> Res
     Ok(r)
 }
 
+enum Samples {
+    U8(Vec<u8>),
+    U16(Vec<u16>),
+}
+
+impl Samples {
+    fn at(&self, index: usize) -> f64 {
+        match self {
+            Self::U8(v) => f64::from(v.get(index).copied().unwrap_or(0)) / 255.0,
+            Self::U16(v) => f64::from(v.get(index).copied().unwrap_or(0)) / 65535.0,
+        }
+    }
+
+    fn copy_pixel(&self, index: usize, channels: usize, sample: SampleType, out: &mut [u8]) -> bool {
+        let Some(end) = index.checked_add(channels) else { return false };
+        match self {
+            Self::U8(v) if sample == SampleType::U8 => {
+                let Some(pixel) = v.get(index..end) else { return false };
+                out.copy_from_slice(pixel);
+            }
+            Self::U16(v) if sample == SampleType::U16 => {
+                let Some(pixel) = v.get(index..end) else { return false };
+                for (dst, value) in out.as_chunks_mut::<2>().0.iter_mut().zip(pixel) {
+                    dst.copy_from_slice(&value.to_ne_bytes());
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn first_channel(self) -> Self {
+        match self {
+            Self::U8(v) => Self::U8(v.as_chunks::<4>().0.iter().map(|p| p[0]).collect()),
+            Self::U16(v) => Self::U16(v.as_chunks::<4>().0.iter().map(|p| p[0]).collect()),
+        }
+    }
+}
+
+fn high_depth_image(img: &af::Image) -> bool {
+    matches!(&img.pixels, Pixels::Rgba16(_) | Pixels::RasterFile { bits_per_channel: 16, .. })
+}
+
+fn high_depth_node(node: &af::Node) -> bool {
+    matches!(&node.kind, Kind::Image(img) if high_depth_image(img))
+        || node.pixel_mask.as_ref().is_some_and(high_depth_image)
+        || node.children.iter().any(high_depth_node)
+}
+
 struct Builder {
     doc: Document,
     warnings: Vec<String>,
@@ -105,10 +154,11 @@ impl Builder {
             return Err(IoError::Unsupported("the Affinity document is larger than 300 000 pixels on a side".into()));
         }
         let size = Size::new(w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32);
-        let mut doc = Document::new(name, size, ColorMode::Rgb, SampleType::U8);
+        let depth = if d.spreads.iter().any(|s| s.nodes.iter().any(high_depth_node)) { SampleType::U16 } else { SampleType::U8 };
+        let mut doc = Document::new(name, size, ColorMode::Rgb, depth);
         doc.resolution_dpi = d.dpi as f32;
         let canvas = Rect::new(0, 0, size.width as i32, size.height as i32);
-        Ok(Self { doc, warnings: Vec::new(), format: PixelFormat::RGBA8, canvas })
+        Ok(Self { doc, warnings: Vec::new(), format: PixelFormat { mode: ColorMode::Rgb, sample: depth, alpha: true }, canvas })
     }
 
     fn warn(&mut self, w: &str) {
@@ -482,11 +532,12 @@ impl Builder {
         layer
     }
 
-    /// Straight RGBA8 pixels of an image (decoding an embedded file), with its size.
-    fn pixels(&mut self, img: &af::Image) -> Option<(u32, u32, Vec<u8>)> {
+    /// Straight RGBA samples, retaining 16-bit precision (also for embedded files).
+    fn pixels(&mut self, img: &af::Image) -> Option<(u32, u32, Samples)> {
         match &img.pixels {
-            Pixels::Rgba8(v) => Some((img.width, img.height, v.clone())),
-            Pixels::Encoded(bytes) => {
+            Pixels::Rgba8(v) => Some((img.width, img.height, Samples::U8(v.clone()))),
+            Pixels::Rgba16(v) => Some((img.width, img.height, Samples::U16(v.clone()))),
+            Pixels::Encoded(bytes) | Pixels::RasterFile { bytes, .. } => {
                 let opts = photocraft_codecs::DecodeOptions {
                     limits: photocraft_codecs::Limits { max_width: 65_535, max_height: 65_535, max_pixels: MAX_PIXELS, max_alloc: 512 << 20 },
                     ..Default::default()
@@ -494,7 +545,21 @@ impl Builder {
                 match photocraft_codecs::decode_with(bytes, &opts) {
                     Ok(d) => {
                         let (w, h) = d.dimensions();
-                        Some((w, h, d.to_rgba8()))
+                        if matches!(img.pixels, Pixels::RasterFile { .. }) && (w, h) != (img.width, img.height) {
+                            self.warn("a pixel layer's original image has different dimensions and was left out");
+                            return None;
+                        }
+                        if let Pixels::RasterFile { bits_per_channel, .. } = &img.pixels {
+                            if !d.layout().is_rgb() || d.sample_type().is_float() || d.sample_type().bytes() * 8 != usize::from(*bits_per_channel) {
+                                self.warn("a pixel layer's original image has a different colour model or depth and was left out");
+                                return None;
+                            }
+                            if d.icc.is_some() {
+                                self.warn("an embedded colour profile on a source-backed pixel layer was not applied");
+                            }
+                        }
+                        let samples = if self.format.sample == SampleType::U16 { Samples::U16(d.to_rgba16()) } else { Samples::U8(d.to_rgba8()) };
+                        Some((w, h, samples))
                     }
                     Err(_) => {
                         self.warn("an embedded image that could not be decoded was left out");
@@ -519,22 +584,22 @@ impl Builder {
                 m,
                 Some(surface),
             )),
-            Pixels::Rgba8(_) => LayerContent::Raster(surface),
+            Pixels::Rgba8(_) | Pixels::Rgba16(_) | Pixels::RasterFile { .. } => LayerContent::Raster(surface),
         })
     }
 
     fn mask(&mut self, img: &af::Image, to_doc: Affine) -> Option<Surface> {
         let (w, h, rgba) = self.pixels(img)?;
-        let grey: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[0]).collect();
+        let grey = rgba.first_channel();
         let m = to_doc.mul(&affine(img.transform));
         self.resample(w, h, &grey, m, 1)
     }
 
-    /// Bilinear resampling of `src` (`w`×`h`, `channels` 4 = straight RGBA8 or 1 = grey) mapped
+    /// Bilinear resampling of `src` (`w`×`h`, `channels` 4 = straight RGBA or 1 = grey) mapped
     /// by `m` (source pixels to canvas pixels) into a surface; exact copy when `m` is an integer
     /// translation. Pixels outside the source are transparent (grey: 0, hidden).
-    fn resample(&mut self, w: u32, h: u32, src: &[u8], m: Affine, channels: usize) -> Option<Surface> {
-        let format = if channels == 1 { PixelFormat::GRAY8 } else { self.format };
+    fn resample(&mut self, w: u32, h: u32, src: &Samples, m: Affine, channels: usize) -> Option<Surface> {
+        let format = if channels == 1 { PixelFormat { mode: ColorMode::Grayscale, sample: self.format.sample, alpha: false } } else { self.format };
         let mut out = if channels == 1 { Surface::with_default(format, &[0.0]) } else { Surface::new(format) };
         let r = self.bbox(m, af::Rect { x0: 0.0, y0: 0.0, x1: f64::from(w), y1: f64::from(h) });
         if r.width() == 0 || r.height() == 0 {
@@ -548,20 +613,38 @@ impl Builder {
         let exact = a == 1.0 && d == 1.0 && b == 0.0 && c == 0.0 && e.fract() == 0.0 && f.fract() == 0.0;
         let inv = m.inverse()?;
         let (rw, rh) = (r.width() as usize, r.height() as usize);
-        let mut buf = vec![0u8; rw * rh * channels];
+        let bps = format.sample.bytes();
+        let mut buf = vec![0u8; rw * rh * channels * bps];
+        let put = |dst: &mut [u8], channel: usize, value: f64| {
+            if bps == 2 {
+                if let Some(dst) = dst.get_mut(channel * 2..channel * 2 + 2) {
+                    dst.copy_from_slice(&((value.clamp(0.0, 1.0) * 65535.0).round() as u16).to_ne_bytes());
+                }
+            } else if let Some(dst) = dst.get_mut(channel) {
+                *dst = (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+        };
         let at = |x: i64, y: i64, ch: usize| -> f64 {
             if x < 0 || y < 0 || x >= i64::from(w) || y >= i64::from(h) {
                 return 0.0;
             }
-            f64::from(src.get((y as usize * w as usize + x as usize) * channels + ch).copied().unwrap_or(0))
+            src.at((y as usize * w as usize + x as usize) * channels + ch)
         };
-        for (row, out_row) in buf.chunks_exact_mut(rw * channels).enumerate() {
-            for (col, px) in out_row.chunks_exact_mut(channels).enumerate() {
+        for (row, out_row) in buf.chunks_exact_mut(rw * channels * bps).enumerate() {
+            for (col, px) in out_row.chunks_exact_mut(channels * bps).enumerate() {
                 let p = inv.apply(Point::new(f64::from(r.x0) + col as f64 + 0.5, f64::from(r.y0) + row as f64 + 0.5));
                 if exact {
                     let (x, y) = (p.x.floor() as i64, p.y.floor() as i64);
-                    for (ch, v) in px.iter_mut().enumerate() {
-                        *v = at(x, y, ch) as u8;
+                    if x >= 0
+                        && y >= 0
+                        && x < i64::from(w)
+                        && y < i64::from(h)
+                        && src.copy_pixel((y as usize * w as usize + x as usize) * channels, channels, format.sample, px)
+                    {
+                        continue;
+                    }
+                    for ch in 0..channels {
+                        put(px, ch, at(x, y, ch));
                     }
                     continue;
                 }
@@ -571,15 +654,15 @@ impl Builder {
                 let weights =
                     [((x0, y0), (1.0 - tx) * (1.0 - ty)), ((x0 + 1, y0), tx * (1.0 - ty)), ((x0, y0 + 1), (1.0 - tx) * ty), ((x0 + 1, y0 + 1), tx * ty)];
                 if channels == 1 {
-                    px[0] = weights.iter().map(|((x, y), wgt)| at(*x, *y, 0) * wgt).sum::<f64>().round().clamp(0.0, 255.0) as u8;
+                    put(px, 0, weights.iter().map(|((x, y), wgt)| at(*x, *y, 0) * wgt).sum());
                 } else {
                     // Interpolate premultiplied colour so transparent pixels don't bleed.
                     let alpha: f64 = weights.iter().map(|((x, y), wgt)| at(*x, *y, 3) * wgt).sum();
-                    for (ch, v) in px.iter_mut().enumerate().take(3) {
-                        let pm: f64 = weights.iter().map(|((x, y), wgt)| at(*x, *y, ch) * at(*x, *y, 3) / 255.0 * wgt).sum();
-                        *v = if alpha > 0.0 { (pm * 255.0 / alpha).round().clamp(0.0, 255.0) as u8 } else { 0 };
+                    for ch in 0..3 {
+                        let pm: f64 = weights.iter().map(|((x, y), wgt)| at(*x, *y, ch) * at(*x, *y, 3) * wgt).sum();
+                        put(px, ch, if alpha > 0.0 { pm / alpha } else { 0.0 });
                     }
-                    px[3] = alpha.round().clamp(0.0, 255.0) as u8;
+                    put(px, 3, alpha);
                 }
             }
         }

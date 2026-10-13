@@ -39,6 +39,21 @@ pub(crate) fn node_image(r: &mut Reader, id: ObjId, world: Affine) -> Result<Opt
             Err(_) => r.warn("an embedded image file that could not be read (its cached pixels were used)"),
         }
     }
+    // State 5 means read from Bckg. Recover only a complete, wholly source-backed
+    // RGB(A) grid: using the original for a mixed grid would undo raster edits.
+    if matches!(s.enumeration(bitmap, b"Frmt"), Some((0 | 1, _)))
+        && wholly_backed(s, bitmap, width, height)
+        && let Some(name) = s.entry(bitmap, b"Bckg").filter(|n| !n.is_empty())
+    {
+        match original(r, name) {
+            Ok(bytes) => {
+                let bits_per_channel = if s.enumeration(bitmap, b"Frmt").is_some_and(|(f, _)| f == 1) { 16 } else { 8 };
+                return Ok(Some(Image { width, height, pixels: Pixels::RasterFile { bytes, bits_per_channel }, transform: world }));
+            }
+            Err(Error::Limit(e)) => return Err(Error::Limit(e)),
+            Err(_) => r.warn("a pixel layer's original image could not be read (its cached pixels were used)"),
+        }
+    }
     // The content's bounding box, so a mostly empty canvas-sized layer stays small.
     let crop = s
         .field(id, b"BitR")
@@ -57,6 +72,21 @@ pub(crate) fn node_image(r: &mut Reader, id: ObjId, world: Affine) -> Result<Opt
         r.warn("edited placed images use their stored pixels");
     }
     decode(r, bitmap, crop, world)
+}
+
+/// A complete RGB(A) byte-tile grid whose every channel comes from the original file.
+fn wholly_backed(s: &stream::Stream, bitmap: ObjId, width: u32, height: u32) -> bool {
+    let bps = if s.enumeration(bitmap, b"Frmt").is_some_and(|(f, _)| f == 1) { 2 } else { 1 };
+    let tw = (u64::from(width) * bps).div_ceil(TILE as u64);
+    let th = u64::from(height).div_ceil(TILE as u64);
+    let count = tw.saturating_mul(th);
+    (1..=4).all(|c| {
+        s.int(bitmap, &tag(b"TWi", c)).and_then(|v| u64::try_from(v).ok()) == Some(tw)
+            && s.int(bitmap, &tag(b"THi", c)).and_then(|v| u64::try_from(v).ok()) == Some(th)
+            && s.field(bitmap, &tag(b"Sta", c)).is_some_and(
+                |v| matches!(v, Value::Array(states) if count > 0 && states.len() as u64 == count && states.iter().all(|v| matches!(v, Value::UInt(5)))),
+            )
+    })
 }
 
 /// A mask layer (`MRst`): one channel of coverage as grey pixels (white shows, black hides).
@@ -123,7 +153,8 @@ fn decode(r: &mut Reader, bitmap: ObjId, crop: (u32, u32, u32, u32), world: Affi
         planes.push(plane(r, bitmap, c, bps, (x0, y0, w, h), &mut cache)?);
     }
     let n = (w as usize) * (h as usize);
-    let mut rgba = vec![0u8; n * 4];
+    let mut rgba = vec![0u8; if bps == 2 { 0 } else { n * 4 }];
+    let mut rgba16 = vec![0u16; if bps == 2 { n * 4 } else { 0 }];
     let sample = |p: &Vec<u8>, i: usize| -> f64 {
         if bps == 2 {
             f64::from(u16::from_le_bytes([p.get(2 * i).copied().unwrap_or(0), p.get(2 * i + 1).copied().unwrap_or(0)])) / 65535.0
@@ -131,20 +162,26 @@ fn decode(r: &mut Reader, bitmap: ObjId, crop: (u32, u32, u32, u32), world: Affi
             f64::from(p.get(i).copied().unwrap_or(0)) / 255.0
         }
     };
-    for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-        let v: Vec<f64> = planes.iter().map(|p| sample(p, i)).collect();
+    for i in 0..n {
+        let v = |c| planes.get(c).map_or(0.0, |p| sample(p, i));
         let (r2, g, b, a) = if channels == 1 {
-            (v[0], v[0], v[0], 1.0)
+            (v(0), v(0), v(0), 1.0)
         } else if channels == 5 {
-            let k = 1.0 - v[3];
-            ((1.0 - v[0]) * k, (1.0 - v[1]) * k, (1.0 - v[2]) * k, v[4])
+            let k = 1.0 - v(3);
+            ((1.0 - v(0)) * k, (1.0 - v(1)) * k, (1.0 - v(2)) * k, v(4))
         } else {
-            (v[0], v[1], v[2], v[3])
+            (v(0), v(1), v(2), v(3))
         };
-        px.copy_from_slice(&[r2, g, b, a].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8));
+        if bps == 2 {
+            if let Some(px) = rgba16.get_mut(i * 4..i * 4 + 4) {
+                px.copy_from_slice(&[r2, g, b, a].map(|c| (c.clamp(0.0, 1.0) * 65535.0).round() as u16));
+            }
+        } else if let Some(px) = rgba.get_mut(i * 4..i * 4 + 4) {
+            px.copy_from_slice(&[r2, g, b, a].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8));
+        }
     }
     let transform = Affine([1.0, 0.0, 0.0, 1.0, f64::from(x0), f64::from(y0)]).then(world);
-    Ok(Some(Image { width: w, height: h, pixels: Pixels::Rgba8(rgba), transform }))
+    Ok(Some(Image { width: w, height: h, pixels: if bps == 2 { Pixels::Rgba16(rgba16) } else { Pixels::Rgba8(rgba) }, transform }))
 }
 
 /// The original image file: entry `c/N` is a stream whose root (`Blck`) holds it as `Data`.

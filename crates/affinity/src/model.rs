@@ -201,6 +201,11 @@ pub struct Text {
 pub enum Pixels {
     /// Straight-alpha RGBA, 8 bits per channel, row by row.
     Rgba8(Vec<u8>),
+    /// Straight-alpha RGBA, 16 bits per channel, row by row.
+    Rgba16(Vec<u16>),
+    /// An unedited pixel layer whose complete tile grid refers to its original file.
+    /// Unlike `Encoded`, this remains a raster layer, not a placed smart object.
+    RasterFile { bytes: Vec<u8>, bits_per_channel: u8 },
     /// The original file a placed image was made from (PNG, JPEG…), as embedded.
     Encoded(Vec<u8>),
 }

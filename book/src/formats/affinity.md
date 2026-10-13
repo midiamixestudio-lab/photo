@@ -16,7 +16,11 @@ They keep their names, bounds and editable children when saved as `.pcraft` or P
 artboard moves its children together. Nested boards become masked groups, and rotated or curved
 boards currently use their bounding rectangle.
 
-The document is 8-bit RGB at the Affinity document's resolution. What PhotoCraft can't reproduce is
+The document is RGB at the Affinity document's resolution, using 16 bits when an imported pixel
+layer or mask contains 16-bit samples, and 8 bits otherwise. Unedited RGB pixel layers stored in
+an embedded original image remain editable pixel layers. Mixed edited/original tiles still have
+limitations reported in the import warnings; document colour-profile mapping and 32-bit pixels
+are not implemented. What PhotoCraft can't reproduce is
 listed in a warning when the file opens, for example layer effects, adjustment layers and live
 filters, brush strokes (drawn as plain strokes), special shapes such as clouds and hearts (drawn as
 ellipses), master pages, and CMYK or Lab colour (converted to RGB without the document's profile).

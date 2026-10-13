@@ -8,7 +8,9 @@ Affinity files.
 
 ## What is imported
 
-`photocraft-io` maps the model to an 8-bit RGB document at the Affinity document's resolution:
+`photocraft-io` maps the model to an RGB document at the Affinity document's resolution.
+The document uses 16-bit samples when an imported pixel layer or mask has 16-bit samples;
+otherwise it uses 8-bit samples:
 
 | Affinity | PhotoCraft |
 |---|---|
@@ -27,9 +29,17 @@ Affinity files.
 | Fill layers (`FRst`) | filled rectangles |
 | Artistic and frame text: characters, font family/weight/style, size, tracking, fixed leading, colour, paragraph alignment, first baseline | type layers (rendered with the fonts installed) |
 | Placed images (`ImgN`): the original JPEG/PNG embedded in the file | embedded smart objects |
-| Pixel layers (`Rstr`): RGBA 8/16-bit and CMYK 8-bit tiles, cropped to their content | pixel layers |
+| Pixel layers (`Rstr`): RGBA 8/16-bit and CMYK 8-bit tiles, cropped to their content | pixel layers (16-bit RGBA stays 16-bit) |
+| RGB(A) 8/16-bit pixel layers whose complete tile grid reads from an embedded original image | editable pixel layers (not smart objects) |
 | Embedded documents and symbols (`EmbN`) | the picture Affinity cached of them |
 | Opacity, visibility, lock, names, blend modes | the same (Add as Linear Dodge) |
+
+Source-backed pixel recovery requires a complete four-channel grid of state-5 tiles. Mixed
+source-backed and edited tiles still warn and leave the source-backed tiles empty; the original
+is never substituted for an edited layer. Missing or corrupt originals warn, and originals with
+a different size, colour model or depth are left out with a warning. Embedded colour profiles
+on recovered pixel layers are not applied and are reported. The 16-bit change preserves sample
+precision; it does not implement Affinity's document colour-profile mapping or 32-bit pixels.
 
 Everything else is reported in the import warnings, one line per kind with a count, never
 dropped silently: layer effects, adjustment layers and live filters, brush and pressure strokes,
@@ -75,10 +85,15 @@ PhotoCraft already treats formats that are only partly documented: `photocraft-p
 in Adobe's specification from the MIT-licensed psd-tools and ag-psd, and `photocraft-raw` recovered
 Nikon's compression tables by black-box analysis of CC0 sample files (see their READMEs).
 
-* **No Affinity software.** Affinity was never downloaded, installed, run, scripted, screenshotted or
-  disassembled for this work, and nothing from an Affinity installation (program code, resources,
-  presets, fonts, colour profiles) was read. No file was made with Affinity for it: every sample
-  is a document its author published.
+* **Initial reader provenance.** The initial reader was developed without downloading, installing,
+  running, scripting, screenshotting or disassembling Affinity, or reading its program code,
+  resources, presets, fonts or colour profiles. Its samples were public documents.
+* **2026-10-10 black-box validation.** Original RGB16 and signed RGB32 TIFF fixtures were opened in
+  an existing Affinity 3.3.0 installation, and saved files were compared locally. This reproduced
+  the missing state-5 pixel-layer data and confirmed recovery of all 65,536 RGBA16 samples exactly.
+  No Affinity executable code or resources were read or copied. No application-made document is
+  committed: the regression containers and images are original synthetic test data. The pixel
+  layout used by the fix was already described by the reader; observations validate its meaning.
 * **A public, permissively licensed description.** The container and object-stream layout was
   learned from [VMDevCpp/afread](https://github.com/VMDevCpp/afread) (MIT, at
   `04b672334a43e3e37ded6b5ffc57af231d589774`, written for container versions 7–11) and re-described
@@ -97,7 +112,8 @@ Nikon's compression tables by black-box analysis of CC0 sample files (see their 
   (no licence stated, or GPL or non-commercial terms) were only opened locally to compare
   pictures, never committed or redistributed. The corpus test keeps the comparison for the pinned
   files, which are CC0, MIT or Apache-2.0 only.
-* **Nothing of Affinity's is in this repository**: no program code, assets or documents. The test
+* **No proprietary program content is in this repository**: no Affinity code, assets or locally
+  application-made documents. The test
   files are fetched at pinned commits and sha256-verified, never committed.
 * **Read-only.** Nothing is written in Affinity's format; export waits until someone can check
   written files in Affinity itself.
@@ -126,7 +142,9 @@ The same reader is shared, as an independent copy, with VectorCraft's `vectorcra
 
 What has not been verified: files from Affinity builds or platforms outside the public set, files
 written by other applications, rotated or skewed images against Affinity's render, mask polarity
-against a render with and without the mask, and anything listed as a warning above. The `synth`
+against a render with and without the mask, and anything listed as a warning above. Source-backed
+recovery was checked against one original RGB16 document saved by Affinity 3.3.0; broader versions,
+platforms and profile/orientation conversions still need application-based oracles. The `synth`
 builders write only what this reader accepts; Affinity has never opened their output, so they are
 test fixtures, not an exporter.
 
