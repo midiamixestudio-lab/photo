@@ -42,6 +42,35 @@ fn row(h: &Harness<'_, PhotocraftApp>, id: LayerId) -> crate::layer_row_ui::RowR
 }
 
 #[test]
+fn new_solid_color_from_menu_opens_picker_but_explicit_color_does_not() {
+    let (mut h, _) = harness(1.0);
+    let ctx = h.ctx.clone();
+    let app = h.state_mut();
+
+    let created = crate::menus::invoke(app, &ctx, "layer.newFillLayer.solidColor", json!({})).unwrap();
+    let id = LayerId(created["layer"].as_u64().unwrap());
+    let dialog = created["dialog"].as_u64().unwrap();
+    let opened = app.ui.dialogs.last().unwrap();
+    assert_eq!(opened.id, dialog);
+    assert!(owns(&opened.fields), "new Solid Color fill opens the existing Color Picker");
+    assert_eq!(opened.fields["__params"]["layer"], id.0);
+    assert_eq!(app.session.active().unwrap().active_layer, Some(id));
+
+    app.ui.dialog_mut(dialog).unwrap().fields.insert("color".into(), json!("#ff8800"));
+    crate::dialogs::confirm(app, dialog).unwrap();
+    let LayerContent::Fill(Fill::Solid(color)) = app.session.active().unwrap().doc.layer(id).unwrap().content else {
+        panic!("expected the newly created Solid Color fill");
+    };
+    assert_eq!(color.to_rgba8()[..3], [255, 136, 0]);
+
+    let dialogs = app.ui.dialogs.len();
+    let explicit = crate::menus::invoke(app, &ctx, "layer.newFillLayer.solidColor", json!({"color": "#123456"})).unwrap();
+    assert!(explicit["layer"].as_u64().is_some());
+    assert!(explicit.get("dialog").is_none());
+    assert_eq!(app.ui.dialogs.len(), dialogs, "parameterised creation stays non-interactive");
+}
+
+#[test]
 fn only_the_colour_thumbnail_opens_the_solid_fill_picker() {
     for ppp in [1.0, 2.0] {
         let (mut h, id) = harness(ppp);

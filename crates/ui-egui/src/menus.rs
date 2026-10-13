@@ -465,6 +465,16 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             }
             Ok(Value::Null)
         }
+        // Layer › New Fill Layer › Solid Color opens the picker for interactive creation.
+        // Calls with explicit parameters are engine actions and do not open a dialog.
+        "layer.newFillLayer.solidColor" if params.as_object().is_none_or(|o| o.is_empty()) => {
+            let created = app.run(id, params)?;
+            if let Some(dialog) = crate::solid_fill_ui::open(app) {
+                Ok(json!({"layer": created["layer"], "dialog": dialog}))
+            } else {
+                Ok(created)
+            }
+        }
         // Solid Color fills and solid-colour shapes use the Color Picker, Pattern fills the Pattern
         // Fill dialog; other adjustment / fill / shape controls use Properties.
         "layer.layerContentOptions" => {
