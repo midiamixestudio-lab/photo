@@ -25,6 +25,13 @@ const MAX_CELLS: usize = 512;
 /// destination pixel the filter follows (bounds the footprint each tile reads).
 const MAX_SS: f64 = 8.0;
 
+/// Bounded source grid shared by CPU resampling and accelerated previews. Using different
+/// triangles for a curved map changes the sampled pixels even with identical interpolation.
+pub fn mesh_grid(src_rect: Rect) -> (usize, usize) {
+    let cells = |size| ((f64::from(size) / CELL).ceil() as usize).clamp(1, MAX_CELLS);
+    (cells(src_rect.width()), cells(src_rect.height()))
+}
+
 /// Places a smart object's source image (`src`, its pixels in `src_rect`) in the document:
 /// through `warp` (source space) and then the affine `t` (source → document) in one resampling
 /// pass, an exact shift for whole-pixel translations (so conversions and re-renders are
@@ -77,8 +84,7 @@ pub fn warp_mesh_surface(src: &Surface, src_rect: Rect, f: &(dyn Fn(f64, f64) ->
         return Surface::new(PixelFormat::new(fmt.mode, fmt.sample, true));
     }
     let (sw, sh) = (f64::from(src_rect.width()), f64::from(src_rect.height()));
-    let nx = ((sw / CELL).ceil() as usize).clamp(1, MAX_CELLS);
-    let ny = ((sh / CELL).ceil() as usize).clamp(1, MAX_CELLS);
+    let (nx, ny) = mesh_grid(src_rect);
     // Forward-mapped vertices (and their source positions).
     let mut verts = Vec::with_capacity((nx + 1) * (ny + 1));
     for j in 0..=ny {
@@ -332,7 +338,8 @@ pub fn warp_triangles(src: &Surface, src_rect: Rect, verts: &[([f64; 2], [f64; 2
             any = true;
             let b = o * n;
             for c in 0..a {
-                outp[b + c] = (acc[c] / al).clamp(0.0, 1.0) as f32;
+                let value = acc[c] / al;
+                outp[b + c] = if fmt.sample == photocraft_color::SampleType::F32 { value as f32 } else { value.clamp(0.0, 1.0) as f32 };
             }
             outp[b + a] = al as f32;
         }

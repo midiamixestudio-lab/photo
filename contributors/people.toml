@@ -158,3 +158,8 @@ sync_github_name = false
 [people.yeniufuklar-com]
 real_name = "Ufuk Efe"
 sync_github_name = true
+
+[people.hidoba]
+real_name = "Vlad Grankovsky"
+display_name = "Vlad Grankovsky"
+sync_github_name = false
