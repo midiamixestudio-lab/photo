@@ -1892,7 +1892,7 @@ mod tests {
         let fresh_back_render = fresh_back.cache.as_ref().expect("fresh render");
 
         assert_eq!(back_cached, fresh_back_render, "cached render must match fresh render when dragged back");
-}
+    }
 
     #[test]
 
