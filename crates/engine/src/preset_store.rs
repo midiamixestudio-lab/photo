@@ -35,6 +35,9 @@
 //! changes asynchronously. Gradient presets, including imported `.grd` groups, are small and persist with
 //! the preferences document (`presets.gradients`).
 //!
+//! The pattern library (imported `.pat` and defined patterns, not the built-ins) lives there too:
+//! `patterns.json` plus one `.pat` file per pattern, see [`patterns`].
+//!
 //! The Actions list (`actions.json`, see [`crate::actions_cmds`]) lives in the same directory.
 //! A missing file is an empty list. A corrupt or oversized file is skipped with a warning.
 //! Headless sessions have no store, so their actions stay in memory.
@@ -48,6 +51,9 @@ use photocraft_paint::{BrushPreset, BrushSettings, GrayTile, Pattern, PresetCapt
 use serde::{Deserialize, Serialize};
 
 use crate::Session;
+
+mod patterns;
+pub use patterns::{Loaded as LoadedPattern, MAX_PATTERN_BYTES, PATTERNS_FILE, PREVIEW_SIDE as PATTERN_PREVIEW_SIDE};
 
 /// Group file extension.
 pub const GROUP_EXT: &str = "pcbrushes";
@@ -550,6 +556,8 @@ pub struct PresetStore {
     actions_rev: u64,
     /// `actions.json` exists but failed to load: left on disk untouched, so it is never written.
     actions_skipped: bool,
+    /// The pattern files and index (`patterns.json`).
+    patterns: patterns::PatternFiles,
     warnings: Vec<String>,
     /// Full tips loaded for brushes in use (behind a lock so `&Session` paths can load).
     cache: Mutex<TipCache>,
@@ -568,6 +576,8 @@ pub struct Opened {
     pub warnings: Vec<String>,
     /// Recorded actions (`actions.json`). Empty when the file is missing or unreadable.
     pub actions: Vec<crate::actions_cmds::Action>,
+    /// Imported and defined patterns (`patterns.json`), in library order; large ones as previews.
+    pub patterns: Vec<patterns::Loaded>,
 }
 
 /// Load a store (any thread; the desktop app does this in the background at start).
@@ -644,6 +654,7 @@ pub fn open(backend: Box<dyn PresetBackend>) -> Opened {
     let loaded_actions = load_actions(backend.as_ref(), &mut warnings);
     let actions_skipped = loaded_actions.is_none();
     let actions = loaded_actions.unwrap_or_default();
+    let (patterns, pattern_files) = patterns::load(backend.as_ref(), &mut warnings);
     let mut store = PresetStore {
         backend,
         synced_rev: None,
@@ -653,6 +664,7 @@ pub fn open(backend: Box<dyn PresetBackend>) -> Opened {
         index: None,
         actions_rev: 0,
         actions_skipped,
+        patterns: pattern_files,
         warnings: Vec::new(),
         cache: Mutex::new(TipCache { limit: TIP_CACHE_BYTES, ..Default::default() }),
     };
@@ -710,7 +722,7 @@ pub fn open(backend: Box<dyn PresetBackend>) -> Opened {
     let hidden_builtins = index.as_ref().map(|i| i.hidden_builtins.clone()).unwrap_or_default();
     let order = index.as_ref().map(|i| i.order.clone()).unwrap_or_default();
     store.index = index;
-    Opened { store, presets, hidden_builtins, order, warnings, actions }
+    Opened { store, presets, hidden_builtins, order, warnings, actions, patterns }
 }
 
 /// `actions.json`: a missing file is an empty list. Anything else unreadable is a warning.
@@ -1042,6 +1054,17 @@ impl PresetStore {
         Ok(())
     }
 
+    /// Write the pattern library's changes (see [`patterns`]).
+    pub fn sync_patterns(&mut self, library: &crate::pattern_cmds::PatternLibrary) {
+        patterns::sync(self.backend.as_ref(), &mut self.patterns, library, &mut self.warnings);
+    }
+
+    /// The full pixels of a stored pattern the library holds as a preview.
+    pub fn load_pattern(&self, id: &str) -> Result<photocraft_doc::Pattern, String> {
+        let entry = self.patterns.index.iter().find(|e| e.id == id).ok_or_else(|| format!("pattern {id} is not in the preset store"))?;
+        patterns::load_full(self.backend.as_ref(), entry)
+    }
+
     /// Write the Actions list when `rev` differs from the last load or write.
     /// An oversized list is warned once and not retried. An I/O error is warned and retried
     /// on the next command.
@@ -1091,7 +1114,17 @@ impl Session {
     /// built-in of the same name; presets created before the store finished loading win), hide
     /// deleted built-ins, then sync. Returns the load warnings.
     pub fn attach_preset_store(&mut self, opened: Opened) -> Vec<String> {
-        let Opened { store, presets, hidden_builtins, order, mut warnings, actions: disk } = opened;
+        let Opened { store, presets, hidden_builtins, order, mut warnings, actions: disk, patterns } = opened;
+        // Stored patterns join the library after the built-ins; patterns imported before the
+        // store finished loading keep theirs (same id).
+        for l in patterns {
+            if !self.patterns.items.iter().any(|q| q.id == l.pattern.id) {
+                if let Some(size) = l.full {
+                    self.patterns.stored.insert(l.pattern.id.clone(), size);
+                }
+                self.patterns.items.push(l.pattern);
+            }
+        }
         let lib = &mut self.tools.presets;
         lib.retain(|p| !(p.builtin && hidden_builtins.iter().any(|h| h.eq_ignore_ascii_case(&p.name))));
         for p in presets {
@@ -1151,6 +1184,7 @@ impl Session {
                 }
             }
             st.sync_actions(&self.actions.list, actions_rev);
+            st.sync_patterns(&self.patterns);
         }
     }
 
