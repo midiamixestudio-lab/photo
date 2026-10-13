@@ -2629,7 +2629,9 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let area = ui.available_rect_before_wrap();
     paint_dots(ui, area, app.session.prefs().interface.show_canvas_dots);
     // File › Open Recent, newest first (on the web there are no paths to reopen).
-    let recent: Vec<String> = if cfg!(target_arch = "wasm32") { Vec::new() } else { app.ui.recent_files.iter().take(HOME_RECENT).cloned().collect() };
+    let show_recent = app.session.prefs().interface.show_home_recent_files;
+    let recent: Vec<String> =
+        if cfg!(target_arch = "wasm32") || !show_recent { Vec::new() } else { app.ui.recent_files.iter().take(HOME_RECENT).cloned().collect() };
     let recent_h = if recent.is_empty() { 0.0 } else { 34.0 + recent.len() as f32 * HOME_RECENT_ROW };
     let card = Rect::from_center_size(area.center(), egui::vec2(460.0, 330.0 + recent_h));
     let new_label = crate::shortcuts::command_label(app, "New document…", "file.new");
@@ -6550,6 +6552,29 @@ mod tests {
 
     /// The Home screen's × takes a file off Recent without opening it, and its right-click menu
     /// removes one entry or clears the list; the preferences keep the change (#2691).
+    #[test]
+    fn home_recent_list_hides_when_the_preference_is_off() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.push_recent("/tmp/photocraft-217/hidden.psd");
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 760.0)).build_ui_state(
+            |ui, (app, ready): &mut (PhotocraftApp, bool)| {
+                if *ready {
+                    egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| document_area(app, ui));
+                }
+            },
+            (app, false),
+        );
+        PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::default());
+        h.state_mut().1 = true;
+        h.run_steps(3);
+        assert!(h.query_by_label("hidden.psd").is_some(), "listed by default");
+        h.state_mut().0.run("prefs.set", serde_json::json!({"values": {"interface.showHomeRecentFiles": false}})).unwrap();
+        h.run_steps(3);
+        assert!(h.query_by_label("hidden.psd").is_none(), "hidden when off");
+        assert_eq!(h.state().0.ui.recent_files.len(), 1, "the list itself is kept");
+    }
+
     #[test]
     fn home_recent_entries_can_be_removed() {
         use egui_kittest::kittest::Queryable;
