@@ -3897,3 +3897,7 @@ curves	Smooth	Vloeiend maken
 @plural	{n} action|{n} actions	{n} handeling|{n} handelingen
 	Auto Add/Delete	Automatisch toevoegen/verwijderen
 	ICO is limited to 256 × 256 pixels	ICO is beperkt tot 256 × 256 pixels
+	Pasting from other apps is unavailable	Plakken vanuit andere apps is niet beschikbaar
+	PhotoCraft can't reach the system clipboard in this session. On Wayland, a Flatpak sandbox hides the protocol that images from other apps are read through.	PhotoCraft heeft in deze sessie geen toegang tot het systeemklembord. Onder Wayland verbergt een Flatpak-sandbox het protocol waarmee afbeeldingen uit andere apps worden gelezen.
+	To paste from other apps, start PhotoCraft under XWayland: `{command}`	Om vanuit andere apps te plakken, start je PhotoCraft onder XWayland: `{command}`
+	Nothing to paste: PhotoCraft can't read the system clipboard here	Niets om te plakken: PhotoCraft kan het systeemklembord hier niet lezen

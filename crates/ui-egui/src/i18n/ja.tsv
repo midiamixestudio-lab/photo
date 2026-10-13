@@ -3815,3 +3815,7 @@ curves	Smooth	スムーズ
 	Reset All Locked Settings	ロックされた設定をすべて初期化
 	Copy Texture to Other Tools	テクスチャを他のツールにコピー
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
+	Pasting from other apps is unavailable	他のアプリからの貼り付けは利用できません
+	PhotoCraft can't reach the system clipboard in this session. On Wayland, a Flatpak sandbox hides the protocol that images from other apps are read through.	このセッションでは PhotoCraft がシステムのクリップボードにアクセスできません。Wayland では、Flatpak のサンドボックスが他のアプリの画像を読み取るためのプロトコルを隠します。
+	To paste from other apps, start PhotoCraft under XWayland: `{command}`	他のアプリから貼り付けるには、XWayland 上で PhotoCraft を起動してください: `{command}`
+	Nothing to paste: PhotoCraft can't read the system clipboard here	貼り付けるものがありません: ここでは PhotoCraft がシステムのクリップボードを読み取れません

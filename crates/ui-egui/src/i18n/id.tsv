@@ -3126,3 +3126,7 @@ curves	Smooth	Haluskan
 @plural	{n} action|{n} actions	{n} tindakan
 	Auto Add/Delete	Tambah/Hapus Otomatis
 	ICO is limited to 256 × 256 pixels	ICO dibatasi hingga 256 × 256 piksel
+	Pasting from other apps is unavailable	Menempel dari aplikasi lain tidak tersedia
+	PhotoCraft can't reach the system clipboard in this session. On Wayland, a Flatpak sandbox hides the protocol that images from other apps are read through.	PhotoCraft tidak dapat mengakses papan klip sistem dalam sesi ini. Di Wayland, sandbox Flatpak menyembunyikan protokol yang digunakan untuk membaca gambar dari aplikasi lain.
+	To paste from other apps, start PhotoCraft under XWayland: `{command}`	Untuk menempel dari aplikasi lain, jalankan PhotoCraft di bawah XWayland: `{command}`
+	Nothing to paste: PhotoCraft can't read the system clipboard here	Tidak ada yang ditempel: PhotoCraft tidak dapat membaca papan klip sistem di sini
