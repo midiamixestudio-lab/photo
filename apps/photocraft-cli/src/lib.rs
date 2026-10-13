@@ -307,7 +307,6 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
             let ws: Vec<String> = serde_json::from_value(o["warnings"].clone()).unwrap_or_default();
             reported_fonts.extend(ws.iter().cloned());
             warn_all(err, &ws);
-            reported_fonts.extend(ws);
         }
         ([], Some(new)) => {
             let p: Value = serde_json::from_str(new).map_err(|e| format!("bad --new JSON: {e}"))?;
@@ -352,6 +351,8 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     if let Some(o) = a.get("--out") {
         let r = h.save(None, Some(Path::new(o)), a.get("--format"), &opts).map_err(|e| e.to_string())?;
         let ws: Vec<String> = serde_json::from_value(r["warnings"].clone()).unwrap_or_default();
+        // A save extends its warnings with the document's missing fonts (`Headless::save`); the
+        // run has already warned about the ones it saw, so print only what is new.
         let ws: Vec<String> = ws.into_iter().filter(|w| reported_fonts.insert(w.clone())).collect();
         warn_all(err, &ws);
     }
