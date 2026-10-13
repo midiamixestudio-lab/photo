@@ -2747,3 +2747,7 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
+
+# Darken / Lighten Interface (⇧⌘F1 / ⇧⌘F2)
+	Darken Interface	界面变暗
+	Lighten Interface	界面变亮

@@ -3735,3 +3735,7 @@ curves	Smooth	Wygładź
 @plural	{n} action|{n} actions	{n} operacja|{n} operacje|{n} operacji
 	Auto Add/Delete	Automatyczne dodawanie/usuwanie
 	ICO is limited to 256 × 256 pixels	ICO jest ograniczony do 256 × 256 pikseli
+
+# Darken / Lighten Interface (⇧⌘F1 / ⇧⌘F2)
+	Darken Interface	Przyciemnij interfejs
+	Lighten Interface	Rozjaśnij interfejs

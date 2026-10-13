@@ -3927,3 +3927,7 @@ layerLabel	No Color	Sem cor
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
+
+# Darken / Lighten Interface (⇧⌘F1 / ⇧⌘F2)
+	Darken Interface	Escurecer interface
+	Lighten Interface	Clarear interface

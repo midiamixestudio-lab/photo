@@ -3836,3 +3836,7 @@ curves	Smooth	Згладити
 @plural	{n} action|{n} actions	{n} операція|{n} операції|{n} операцій
 	Auto Add/Delete	Автододавання/видалення
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
+
+# Darken / Lighten Interface (⇧⌘F1 / ⇧⌘F2)
+	Darken Interface	Зробити інтерфейс темнішим
+	Lighten Interface	Зробити інтерфейс світлішим

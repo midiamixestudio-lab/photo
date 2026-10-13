@@ -3139,3 +3139,7 @@ curves	Smooth	Lisser
 @plural	{n} action|{n} actions	{n} action|{n} actions
 	Auto Add/Delete	Ajout/suppr. auto
 	ICO is limited to 256 × 256 pixels	Le format ICO est limité à 256 × 256 pixels
+
+# Darken / Lighten Interface (⇧⌘F1 / ⇧⌘F2)
+	Darken Interface	Assombrir l'interface
+	Lighten Interface	Éclaircir l'interface
