@@ -131,7 +131,7 @@ pub enum Outcome {
 /// field's value is validated before the first one is applied, so a typo, an unknown field, a
 /// bad value or a bad nested key can't reply with success while nothing — or only half of it —
 /// changed (#412).
-pub const UI_SET_FIELDS: [&str; 35] = [
+pub const UI_SET_FIELDS: [&str; 36] = [
     "tool",
     "panels",
     "dock",
@@ -167,6 +167,7 @@ pub const UI_SET_FIELDS: [&str; 35] = [
     "shapeStroke",
     "camTransformOnDrop",
     "tileGrid",
+    "typeDetails",
 ];
 
 /// Most clicks one `ui.click` may queue (#982). Each click is a press and a release that the app
@@ -511,6 +512,14 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 let cam_transform_on_drop = bool_field(p, "camTransformOnDrop")?;
                 // Developer overlay of the active layer's storage tiles (tile_overlay.rs).
                 let tile_grid = bool_field(p, "tileGrid")?;
+                // Type Details: `false` closes it, `"details"` / `"variable"` opens that tab.
+                let type_details = match p.get("typeDetails") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::Bool(false)) => Some(None),
+                    Some(Value::String(t)) if t == "details" => Some(Some(0)),
+                    Some(Value::String(t)) if t == "variable" => Some(Some(1)),
+                    Some(_) => return Err(r#"typeDetails must be false, "details" or "variable""#.into()),
+                };
                 // The Crop tool's overlay menu (#1919).
                 let crop_overlay = match p.get("cropOverlay") {
                     Some(v) => Some(v.as_str().and_then(crate::crop_overlay::CropOverlay::from_id).ok_or_else(|| {
@@ -668,6 +677,10 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 }
                 if let Some(on) = cam_transform_on_drop {
                     app.ui.tool_options.cam_transform_on_drop = on;
+                }
+                if let Some(tab) = type_details {
+                    app.ui.type_panels.details = tab.is_some();
+                    app.ui.type_panels.details_tab = tab.unwrap_or(app.ui.type_panels.details_tab);
                 }
                 if let Some(on) = tile_grid {
                     app.ui.view.tile_grid = on;
@@ -1924,6 +1937,20 @@ mod tests {
         let bad = call(&mut app, &ctx, "ui.set", json!({"gradientBlendMode": "nonsense", "gradientClassic": false}));
         assert_eq!(bad["ok"], false, "{bad}");
         assert!(app.ui.tool_options.gradient_classic, "invalid mode must not change options");
+    }
+
+    #[test]
+    fn ui_set_opens_type_details() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        assert!(!app.ui.type_panels.details);
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"typeDetails": "variable"}))["ok"], true);
+        assert!(app.ui.type_panels.details && app.ui.type_panels.details_tab == 1);
+        let bad = call(&mut app, &ctx, "ui.set", json!({"typeDetails": true}));
+        assert_eq!(bad["ok"], false, "{bad}");
+        assert!(app.ui.type_panels.details, "a rejected value changes nothing");
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"typeDetails": false}))["ok"], true);
+        assert!(!app.ui.type_panels.details && app.ui.type_panels.details_tab == 1, "closing keeps the tab");
     }
 
     #[test]

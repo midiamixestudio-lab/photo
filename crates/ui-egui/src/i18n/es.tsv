@@ -2822,3 +2822,67 @@ curves	Smooth	Suavizar
 @plural	{n} action|{n} actions	{n} acción|{n} acciones
 	Auto Add/Delete	Añadir/eliminar automáticamente
 	ICO is limited to 256 × 256 pixels	ICO está limitado a 256 × 256 píxeles
+
+# Type Details: OpenType features and variable axes
+	Type Details	Detalles de texto
+	Type Details…	Detalles de texto…
+	OpenType features and variable font axes, with a live preview	Funciones OpenType y ejes de fuentes variables, con vista previa en directo
+	Variable	Variable
+	Set optical size automatically	Definir tamaño óptico automáticamente
+	On	Activado
+	Additional axes	Ejes adicionales
+	Alternate annotation forms	Formas de anotación alternativas
+	Alternate CJK forms	Formas CJK alternativas
+	Alternative fractions	Fracciones alternativas
+	Capital spacing	Espaciado de mayúsculas
+	Capitals to petite capitals	Mayúsculas a versalitas pequeñas
+	Capitals to small capitals	Mayúsculas a versalitas
+	Case	Mayúsculas/minúsculas
+	Case-sensitive forms	Formas sensibles a mayúsculas
+	Character variant {n}	Variante de carácter {n}
+	Character variants	Variantes de carácter
+	Contextual swash	Rasgos contextuales
+	Denominators	Denominadores
+	Expert forms	Formas expertas
+	Figure spacing	Espaciado de cifras
+	Figure style	Estilo de cifras
+	Full widths	Anchos completos
+	Half widths	Anchos medios
+	Historical forms	Formas históricas
+	Historical ligatures	Ligaduras históricas
+	Horizontal spacing	Espaciado horizontal
+	Instance	Instancia
+	Italics	Cursivas
+	Justification alternates	Alternativas de justificación
+	Kerning pairs	Pares de kerning
+	Left bounds	Límites izquierdos
+	Letter case	Mayúsculas y minúsculas
+	Letterforms	Formas de letra
+	Lining	De caja alta
+	Lining figures	Cifras de caja alta
+	Mathematical Greek	Griego matemático
+	More features	Más funciones
+	Numbers	Números
+	Numerators	Numeradores
+	Oldstyle figures	Cifras de estilo antiguo
+	Optical bounds	Límites ópticos
+	Optical size	Tamaño óptico
+	Petite capitals	Versalitas pequeñas
+	Proportional	Proporcionales
+	Proportional alternate widths	Anchos proporcionales alternativos
+	Proportional figures	Cifras proporcionales
+	Proportional widths	Anchos proporcionales
+	Reset All Axes	Restablecer todos los ejes
+	Right bounds	Límites derechos
+	Ruby notation forms	Formas de notación ruby
+	Scientific inferiors	Inferiores científicos
+	Slashed zero	Cero barrado
+	Small capitals	Versalitas
+	Stylistic set {n}	Conjunto estilístico {n}
+	Stylistic sets	Conjuntos estilísticos
+	Subscript	Subíndice
+	Superscript	Superíndice
+	Tabular	Tabulares
+	Tabular figures	Cifras tabulares
+	This font has no variable axes.	Esta fuente no tiene ejes variables.
+	Unicase	Unicase
