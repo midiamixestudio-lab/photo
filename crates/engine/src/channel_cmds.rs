@@ -1196,12 +1196,15 @@ fn delete_channel(s: &mut Session, p: &Value) -> Result<Value> {
             ChannelTarget::Alpha(t) if t > i => ChannelTarget::Alpha(t - 1),
             t => t,
         };
-        fix_view_now(st);
     }
+    fix_view_now(s);
     Ok(Value::Null)
 }
 
-fn fix_view_now(st: &mut DocState) {
+fn fix_view_now(s: &mut Session) {
+    // Native commits release the interactive guard and retain their lock on the running job.
+    let transform_locked = crate::channel_transform::locked(s);
+    let Some(st) = s.active_mut() else { return };
     fix_view(st);
     // Recover an empty view only for ordinary eye/target operations. Document edits and
     // undo/redo preserve valid visibility exactly, including all eyes hidden by a transform.
@@ -1214,7 +1217,7 @@ fn fix_view_now(st: &mut DocState) {
         let v = &st.channel_view;
         (0..n).any(|i| v.alpha_shown(i)) || (quick && !v.quick_mask_hidden) || active.is_some_and(|id| doc.layer(id).is_some_and(|l| l.mask.is_some()))
     };
-    if st.channel_view.visible_colors(colors) == 0 && !shown && st.channel_transform.is_none() {
+    if st.channel_view.visible_colors(colors) == 0 && !shown && !transform_locked {
         st.channel_view.color_hidden.clear();
     }
     touch(st);
@@ -1293,8 +1296,8 @@ fn target(s: &mut Session, t: ChannelTarget) {
                 v.alpha_visible = (0..n).map(|c| c == i).collect();
             }
         }
-        fix_view_now(st);
     }
+    fix_view_now(s);
     s.tools.target_mask(t == ChannelTarget::LayerMask);
 }
 
@@ -1393,7 +1396,7 @@ fn set_visible(s: &mut Session, p: &Value) -> Result<Value> {
         ChanRef::QuickMask => v.quick_mask_hidden = !showing,
         _ => return Err(bad(cmd, "that channel has no visibility")),
     }
-    fix_view_now(st);
+    fix_view_now(s);
     Ok(list(s))
 }
 
@@ -1525,8 +1528,8 @@ fn merge_spot(s: &mut Session, p: &Value) -> Result<Value> {
     })?;
     if let Some(st) = s.active_mut() {
         st.channel_view = ChannelView::default();
-        fix_view_now(st);
     }
+    fix_view_now(s);
     Ok(Value::Null)
 }
 

@@ -245,7 +245,14 @@ fn panel_channel_background_jobs_hold_the_target_until_commit_or_cancel() {
             assert!(locked(&s));
             assert!(s.execute("channel.target", json!({"channel":"blue"})).is_err());
             assert!(s.edit::<()>("direct edit", |_, _| panic!("locked work must never run")).is_err());
+            s.execute("channel.setVisible", json!({"channel":"green","visible":false})).unwrap();
+            assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 0, "hiding the last eye must not restore RGB during commit");
+            assert!(locked(&s));
+            s.execute("channel.setVisible", json!({"channel":"green","visible":true})).unwrap();
+            assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 1);
             s.execute("channel.setVisible", json!({"channel":"composite","visible":false})).unwrap();
+            assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 0, "the composite eye can hide every colour during commit");
+            assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::Color(1));
             let view = s.active().unwrap().channel_view.clone();
             if cancel {
                 assert!(s.cancel_job(job));
@@ -279,6 +286,9 @@ fn panel_channel_background_jobs_hold_the_target_until_commit_or_cancel() {
                 }
                 assert!(s.undo());
                 assert_eq!(surface(&s).try_to_interleaved(before.bounds()).unwrap(), original);
+                assert_eq!(s.active().unwrap().channel_view, view);
+                assert!(s.redo());
+                assert_eq!(surface(&s).try_to_interleaved(before.bounds()).unwrap(), moved);
                 assert_eq!(s.active().unwrap().channel_view, view);
             }
             s.execute("channel.target", json!({"channel":"blue"})).unwrap();

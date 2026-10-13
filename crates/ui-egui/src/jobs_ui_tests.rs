@@ -783,7 +783,9 @@ fn isolated_channel_background_commit_preserves_target_samples_eyes_and_cancel()
         let t = app.ui.transform.as_mut().unwrap();
         t.quad = t.quad.map(|[x, y]| [x + 24.0, y + 8.0]);
         app.run("channel.setVisible", json!({"channel":"red","visible":false})).unwrap();
+        app.run("channel.setVisible", json!({"channel":"blue","visible":false})).unwrap();
         let view = app.session.active().unwrap().channel_view.clone();
+        assert_eq!(view.visible_colors(3), 1);
         app.session.tools.background = [0.25, 0.5, 0.75, 1.0];
         crate::transform_tool::commit(app);
         assert!(crate::transform_tool::committing(app).is_some());
@@ -792,8 +794,15 @@ fn isolated_channel_background_commit_preserves_target_samples_eyes_and_cancel()
         assert!(app.run("history.undo", json!({})).is_err());
         assert!(app.session.edit::<()>("direct edit", |_, _| panic!("the captured source is locked")).is_err());
         app.run("channel.setVisible", json!({"channel":"green","visible":false})).unwrap();
+        assert_eq!(app.session.active().unwrap().channel_view.visible_colors(3), 0, "hiding the last eye must not restore RGB during commit");
         assert!(crate::transform_tool::committing(app).is_some());
+        assert!(app.ui.transform.is_some() && app.transform_preview.is_some());
         app.run("channel.setVisible", json!({"channel":"green","visible":true})).unwrap();
+        assert_eq!(app.session.active().unwrap().channel_view, view, "showing the target restores only its own eye");
+        app.run("channel.setVisible", json!({"channel":"composite","visible":false})).unwrap();
+        let view = app.session.active().unwrap().channel_view.clone();
+        assert_eq!(view.visible_colors(3), 0, "the composite eye can hide every colour during commit");
+        assert_eq!(view.target, photocraft_engine::channel_cmds::ChannelTarget::Color(1));
         assert_eq!(app.session.tools.background, [0.25, 0.5, 0.75, 1.0]);
         if cancel {
             crate::transform_tool::cancel(app);
@@ -830,6 +839,7 @@ fn isolated_channel_background_commit_preserves_target_samples_eyes_and_cancel()
             assert_eq!(app.session.active().unwrap().channel_view, view);
             assert!(app.session.redo());
             assert_eq!(app.session.active().unwrap().doc.layer(id).unwrap().surface().unwrap().to_interleaved(before.bounds()), moved);
+            assert_eq!(app.session.active().unwrap().channel_view, view);
         }
         app.run("channel.target", json!({"channel":"red"})).unwrap();
     }
