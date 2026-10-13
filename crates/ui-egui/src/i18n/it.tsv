@@ -320,6 +320,7 @@
 	New Video Layer from File…	Nuovo livello video da file…
 	Duplicate Layer…	Duplica livello…
 	Delete Layer	Elimina livello
+	Drawing Assistants	Assistenti di disegno
 	Delete	Elimina
 	Rename Layer	Rinomina livello
 	Create Layer	Crea livello
@@ -695,6 +696,7 @@
 	Rulers	Righelli
 	Snap	Ancoraggio
 	Snap To	Ancoraggio a
+	Straight Line	Linea retta
 	Lock Guides	Blocca guide
 	Clear Guides	Cancella guide
 	Clear Selected Artboard Guides	Cancella guide tavola selezionata
@@ -1094,6 +1096,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	Oppure imposta Preferenze › Prestazioni › Server grafico Linux su X11: PhotoCraft partirà sempre sotto XWayland.
 	Edit › Paste	Modifica › Incolla
 	Duplicate Layers…	Duplica livelli…
+	Drawing assistants: snap strokes to guides	Assistenti di disegno: ancorare i tratti alle guide
+	Snap to Assistants	Ancoraggio agli assistenti
 	Duplicate style	Duplica stile
 	Edit Toolbar…	Modifica barra strumenti…
 	Use File › Open, or paste a copied image with {paste}.	Usa File › Apri, oppure incolla un'immagine copiata con {paste}.
@@ -1509,6 +1513,7 @@
 	Star ratio	Rapporto stella
 	Stop playing/recording	Interrompi riproduzione/registrazione
 	Straighten	Raddrizza
+	Show/hide this assistant	Mostra/nascondi questo assistente
 	Straighten Layer	Raddrizza livello
 	Strength:	Forza:
 	Strikethrough	Barrato
@@ -2321,6 +2326,7 @@
 	Highlight Clipping Warning (O)	Avviso clipping luci (O)
 	Show Lab Color Readouts	Mostra letture colore Lab
 	Show Vectorscope	Mostra vectorscopio
+	Delete this assistant	Elimina questo assistente
 	Show Red at 3 o'clock	Mostra rosso a ore 3
 	Show Skin Tone Indicator	Mostra indicatore incarnato
 	Tone Histogram	Istogramma tonale
@@ -2376,6 +2382,7 @@ cameraRaw	Amount	Quantità
 	Couldn't place {name}: {error}	Impossibile inserire {name}: {error}
 	Full-resolution preview unavailable	Anteprima a piena risoluzione non disponibile
 	Magnetic Lasso Tool	Strumento Lazo magnetico
+	Magnetism	Magnetismo
 	Frequency	Frequenza
 	Use tablet pressure to change pen width	Usa pressione tavoletta per cambiare la larghezza della penna
 

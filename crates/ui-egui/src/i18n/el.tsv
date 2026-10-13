@@ -178,6 +178,7 @@
 	New Layer…	Νέο επίπεδο…
 	Duplicate Layer…	Δημιουργία αντιγράφου επιπέδου…
 	Delete Layer	Διαγραφή επιπέδου
+	Drawing Assistants	Βοηθοί σχεδίασης
 	Layer Mask	Μάσκα επιπέδου
 	Clipping Mask	Μάσκα αποκοπής
 	Merge Layers	Συγχώνευση επιπέδων
@@ -291,6 +292,8 @@
 	Delete tool preset	Διαγραφή προεπιλογής εργαλείου
 	Draw with the Pen tool (P) or make a work path from a selection.	Σχεδιάστε με το εργαλείο Πένα (Pen Tool) (P) ή δημιουργήστε μια διαδρομή εργασίας από μια επιλογή.
 	Duplicate Layers…	Δημιουργία αντιγράφων επιπέδων…
+	Drawing assistants: snap strokes to guides	Βοηθοί σχεδίασης: προσκόλληση πινελιών στους οδηγούς
+	Snap to Assistants	Προσκόλληση σε βοηθούς
 	Edit Toolbar…	Προσαρμογή γραμμής εργαλείων…
 	Edit in Quick Mask Mode  (Q)	Επεξεργασία σε λειτουργία γρήγορης μάσκας  (Q)
 	Enable airbrush-style build-up effects	Ενεργοποίηση σταδιακής συσσώρευσης χρώματος όπως στον αερογράφο
@@ -1969,6 +1972,7 @@
 	Show Selected Region	Εμφάνιση επιλεγμένης περιοχής
 	Show Skin Tone Indicator	Εμφάνιση ένδειξης τόνου δέρματος
 	Show Vectorscope	Εμφάνιση διανυσματοσκοπίου
+	Delete this assistant	Διαγραφή αυτού του βοηθού
 	Texture	Υφή
 	Tone Histogram	Ιστόγραμμα τόνων
 	Vignetting	Βινιετάρισμα
@@ -3067,6 +3071,7 @@
 	Smooth…	Εξομάλυνση…
 	Smudge Stick	Σβήσιμο με ράβδο
 	Snap To	Προσκόλληση σε
+	Straight Line	Ευθεία γραμμή
 	Soft	Απαλό
 	Software	Λογισμικό
 	Solarize	Ηλιακή έκθεση
@@ -3103,6 +3108,7 @@
 	Statistics…	Στατιστικά…
 	Stop playing/recording	Διακοπή αναπαραγωγής/εγγραφής
 	Straighten	Ευθυγράμμιση
+	Show/hide this assistant	Εμφάνιση/απόκρυψη αυτού του βοηθού
 	Straighten Layer	Ευθυγράμμιση επιπέδου
 	Strength:	Ένταση:
 	Strikethrough	Διακριτή διαγραφή
@@ -3377,6 +3383,7 @@ cameraRaw	Yellow	Κίτρινο
 	Patch Tool	Επίθεμα επιδιόρθωσης (Patch Tool)
 	Content-Aware Move Tool	Μετακίνηση βάσει περιεχομένου (Content-Aware Move Tool)
 	Magnetic Lasso Tool	Μαγνητικό λάσο (Magnetic Lasso Tool)
+	Magnetism	Μαγνητισμός
 	Vertical Type Tool	Κατακόρυφο κείμενο (Vertical Type Tool)
 	Burn Tool	Σκοτείνιασμα (Burn Tool)
 	Current Tool	Τρέχον εργαλείο

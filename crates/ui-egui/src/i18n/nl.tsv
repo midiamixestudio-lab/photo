@@ -312,6 +312,7 @@
 	New Video Layer from File…	Nieuwe videolaag uit bestand…
 	Duplicate Layer…	Laag dupliceren…
 	Delete Layer	Laag verwijderen
+	Drawing Assistants	Tekenassistenten
 	Delete	Verwijderen
 	Rename Layer	Laag hernoemen
 	Create Layer	Laag maken
@@ -678,6 +679,7 @@
 	Rulers	Linialen
 	Snap	Uitlijnen
 	Snap To	Uitlijnen op
+	Straight Line	Rechte lijn
 	Lock Guides	Hulplijnen vergrendelen
 	Clear Guides	Hulplijnen wissen
 	Clear Selected Artboard Guides	Hulplijnen van geselecteerd tekengebied wissen
@@ -1078,6 +1080,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	Of zet Voorkeuren › Prestaties › Linux-weergaveserver op X11: PhotoCraft start dan altijd onder XWayland.
 	Edit › Paste	Bewerken › Plakken
 	Duplicate Layers…	Lagen dupliceren…
+	Drawing assistants: snap strokes to guides	Tekenassistenten: streken op hulplijnen uitlijnen
+	Snap to Assistants	Op assistenten uitlijnen
 	Duplicate style	Stijl dupliceren
 	Edit Toolbar…	Gereedschapsbalk bewerken…
 	Use File › Open, or paste a copied image with {paste}.	Gebruik Bestand › Openen, of plak een gekopieerde afbeelding met {paste}.
@@ -1492,6 +1496,7 @@
 	Star ratio	Sterverhouding
 	Stop playing/recording	Afspelen/opnemen stoppen
 	Straighten	Rechtzetten
+	Show/hide this assistant	Deze assistent tonen/verbergen
 	Straighten Layer	Laag rechtzetten
 	Strength:	Sterkte:
 	Strikethrough	Doorhalen
@@ -2288,6 +2293,7 @@
 	Show Selected Region	Geselecteerd gebied tonen
 	Show Skin Tone Indicator	Huidtoonindicator tonen
 	Show Vectorscope	Vectorscoop tonen
+	Delete this assistant	Deze assistent verwijderen
 	Tone Histogram	Toonhistogram
 	75%	75%
 	80%	80%
@@ -2321,6 +2327,7 @@
 	Couldn't place {name}: {error}	Kan {name} niet plaatsen: {error}
 	Full-resolution preview unavailable	Voorvertoning op volledige resolutie niet beschikbaar
 	Magnetic Lasso Tool	Magnetische lasso
+	Magnetism	Magnetisme
 	Frequency	Frequentie
 	Use tablet pressure to change pen width	Tabletdruk gebruiken om penbreedte te wijzigen
 	About	Over

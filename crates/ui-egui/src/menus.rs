@@ -52,6 +52,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.lockGuides", "Lock Guides", &["View"], Some("Cmd+Alt+;")),
     ("view.extras", "Extras", &["View"], Some("Cmd+H")),
     ("view.show.targetPath", "Target Path", &["View", "Show"], Some("Cmd+Shift+H")),
+    ("view.show.assistants", "Drawing Assistants", &["View", "Show"], None),
     ("view.screenMode.cycle", "Cycle Screen Mode", &[], Some("F")),
     ("edit.freeTransformCopy", "Free Transform a Copy", &[], Some("Cmd+Alt+T")),
     ("type.editText", "Edit Type", &[], None),

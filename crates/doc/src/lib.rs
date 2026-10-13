@@ -11,6 +11,7 @@
 pub mod adjust;
 pub mod advanced;
 pub mod analysis;
+pub mod assistants;
 pub mod blend_if;
 pub mod comps;
 pub mod effects;
@@ -29,6 +30,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub use adjust::Adjustment;
 pub use advanced::{AdvancedBlending, Knockout};
 pub use analysis::{CountGroup, Measurement, MeasurementScale, Note, Ruler};
+pub use assistants::{
+    AssistSnap, AssistantId, DEFAULT_SNAP_RADIUS, DrawingAssistant, DrawingAssistantItem, DrawingAssistantKind, DrawingAssistants, GuidePrimitive, HandleKind,
+    MAX_ASSISTANTS, MAX_COORDINATE as MAX_ASSISTANT_COORDINATE, MAX_RAYS, MAX_SNAP_RADIUS, MAX_VANISHING_POINTS, PerspectiveAssistant, PerspectiveRay,
+    StraightLineAssistant,
+};
 pub use blend_if::{BlendIf, BlendRange};
 pub use comps::{Artboard, ArtboardBackground, CompAppearance, CompLayerState, LayerComp};
 pub use effects::{
@@ -51,7 +57,7 @@ pub use video::{Timeline, VideoData, VideoSource};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
-fn next_id() -> u64 {
+pub(crate) fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -911,6 +917,9 @@ pub struct Document {
     /// How the document's lossy file was encoded (its JPEG quality, WebP lossy or lossless), so
     /// a save writes it back the same way rather than at fixed defaults.
     pub file_encoding: FileEncoding,
+    /// Drawing assistants: stroke-snapping guides (straight-line rulers, perspective grids).
+    /// Part of the document, so adding or moving one is a history step and it saves to `.pcraft`.
+    pub assistants: DrawingAssistants,
 }
 
 /// The encoder settings a document's file was opened or saved with: what File › Save and the
@@ -973,6 +982,7 @@ impl Document {
             variables: Variables::default(),
             timeline: None,
             file_encoding: FileEncoding::default(),
+            assistants: DrawingAssistants::default(),
         }
     }
 

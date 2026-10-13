@@ -311,6 +311,7 @@
 	New Video Layer from File…	Layer Video Baru dari Berkas…
 	Duplicate Layer…	Duplikat Layer…
 	Delete Layer	Hapus Layer
+	Drawing Assistants	Asisten menggambar
 	Delete	Hapus
 	Rename Layer	Ganti Nama Layer
 	Create Layer	Buat Layer
@@ -681,6 +682,7 @@
 	Rulers	Penggaris
 	Snap	Snap
 	Snap To	Snap ke
+	Straight Line	Garis lurus
 	Lock Guides	Kunci Panduan
 	Clear Guides	Hapus Panduan
 	Clear Selected Artboard Guides	Hapus Panduan Artboard Terpilih
@@ -1073,6 +1075,8 @@
 	Draw with the Pen tool (P) or make a work path from a selection.	Gambar dengan alat Pen (P) atau buat work path dari seleksi.
 	Drop an image or PSD anywhere to open it.	Jatuhkan gambar atau PSD di mana saja untuk membukanya.
 	Duplicate Layers…	Duplikat Layer…
+	Drawing assistants: snap strokes to guides	Asisten menggambar: snap goresan ke panduan
+	Snap to Assistants	Snap ke asisten
 	Duplicate style	Duplikat gaya
 	Edit Toolbar…	Edit Toolbar…
 	Edit in Quick Mask Mode  (Q)	Edit dalam Mode Quick Mask  (Q)
@@ -1487,6 +1491,7 @@
 	Star ratio	Rasio bintang
 	Stop playing/recording	Hentikan putar/rekam
 	Straighten	Luruskan
+	Show/hide this assistant	Tampilkan/sembunyikan asisten ini
 	Straighten Layer	Luruskan Layer
 	Strength:	Kekuatan:
 	Strikethrough	Coret
@@ -2645,6 +2650,7 @@
 	Highlight Clipping Warning (O)	Peringatan Clipping Highlight (O)
 	Show Lab Color Readouts	Tampilkan Nilai Warna Lab
 	Show Vectorscope	Tampilkan Vectorscope
+	Delete this assistant	Hapus asisten ini
 	Show Red at 3 o'clock	Tampilkan Merah di Posisi Jam 3
 	Show Skin Tone Indicator	Tampilkan Indikator Warna Kulit
 	Tone Histogram	Histogram Nada
@@ -2714,6 +2720,7 @@ cameraRaw	Blending	Pembauran
 	Save cancelled	Penyimpanan dibatalkan
 	Couldn't place {name}: {error}	Tidak dapat menempatkan {name}: {error}
 	Magnetic Lasso Tool	Alat Magnetic Lasso
+	Magnetism	Magnetisme
 	Frequency	Frekuensi
 	Use tablet pressure to change pen width	Gunakan tekanan tablet untuk mengubah lebar pena
 

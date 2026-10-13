@@ -628,6 +628,7 @@
 	Smart Guides	Đường căn thông minh
 	Snap	Bắt dính
 	Snap To	Bắt dính vào
+	Straight Line	Đường thẳng
 	Square	Vuông
 	Standard Screen Mode	Chế độ màn hình chuẩn
 	Target Path	Đường dẫn đích
@@ -730,6 +731,7 @@
 	Lasso Tool	Công cụ Lasso
 	Polygonal Lasso Tool	Công cụ Lasso đa giác
 	Magnetic Lasso Tool	Công cụ Lasso từ tính
+	Magnetism	Từ tính
 	Magic Wand Tool	Công cụ Đũa thần
 	Crop Tool	Công cụ Cắt
 	Slice Tool	Công cụ Lát cắt
@@ -953,8 +955,11 @@
 	Link the mask to the layer	Liên kết mặt nạ với lớp
 	Unlink the mask from the layer	Bỏ liên kết mặt nạ khỏi lớp
 	Delete Layer	Xóa lớp
+	Drawing Assistants	Trợ lý vẽ
 	Delete Layers	Xóa các lớp
 	Duplicate Layers…	Nhân bản các lớp…
+	Drawing assistants: snap strokes to guides	Trợ lý vẽ: bắt dính nét vẽ vào đường dẫn
+	Snap to Assistants	Bắt dính vào trợ lý
 	Add Layer Mask	Thêm mặt nạ lớp
 	Apply Layer Mask	Áp dụng mặt nạ lớp
 	Add Mask to Selection	Thêm mặt nạ vào vùng chọn
@@ -1360,6 +1365,7 @@
 	Show Selected Region	Hiện vùng đã chọn
 	Show Skin Tone Indicator	Hiện chỉ báo tông da
 	Show Vectorscope	Hiện Vectorscope
+	Delete this assistant	Xóa trợ lý này
 	Size	Kích thước
 	Temperature	Nhiệt độ màu
 	Texture	Kết cấu
@@ -1848,6 +1854,7 @@ document	Orientation	Hướng trang
 	Perspective Warp is not active	Biến dạng phối cảnh chưa hoạt động
 	Perspective Warp: draw planes along the image's perspective, then switch to Warp	Biến dạng phối cảnh: vẽ mặt phẳng theo phối cảnh ảnh, rồi chuyển sang Biến dạng
 	Straighten	Chỉnh thẳng
+	Show/hide this assistant	Hiện/ẩn trợ lý này
 	Level	Cân ngang
 	Automatically straighten near-vertical line segments	Tự chỉnh thẳng các đoạn gần thẳng đứng
 	Automatically level near-horizontal line segments	Tự cân ngang các đoạn gần nằm ngang

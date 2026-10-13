@@ -729,3 +729,72 @@ fn a_non_finite_float_is_refused_at_save_rather_than_breaking_every_later_load()
     let back = load_from_bytes(&save_to_bytes(&doc, &SaveOptions::default()).unwrap()).unwrap();
     assert_eq!(back, doc);
 }
+
+/// Drawing assistants save and load with the document, ids stable, still snapping afterwards.
+#[test]
+fn drawing_assistants_roundtrip_with_ids_stable() {
+    use photocraft_doc::{DrawingAssistantItem, DrawingAssistantKind, DrawingAssistants, PerspectiveAssistant, StraightLineAssistant};
+    let mut doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    doc.assistants = DrawingAssistants {
+        enabled: true,
+        snap_radius: 12.0,
+        items: vec![
+            DrawingAssistantItem::new("iso".into(), DrawingAssistantKind::StraightLine(StraightLineAssistant::new([10.0, 20.0], 30.0).unwrap())),
+            DrawingAssistantItem::new(
+                "2pt".into(),
+                DrawingAssistantKind::Perspective(PerspectiveAssistant::with_default_rays(vec![[0.0, 140.0], [300.0, 140.0]], None, 45.0).unwrap()),
+            ),
+        ],
+    };
+    // A hidden assistant round-trips too.
+    doc.assistants.items[0].visible = false;
+    let bytes = save_to_bytes(&doc, &SaveOptions::default()).unwrap();
+    let back = load_from_bytes(&bytes).unwrap();
+    assert_eq!(back, doc);
+    assert_eq!(back.assistants.items[0].id, doc.assistants.items[0].id, "assistant ids stay stable");
+    // And the loaded set still snaps onto the perspective horizon (y = 140).
+    let hit = back.assistants.snap_point([150.0, 145.0]).expect("snaps after load");
+    assert_eq!(hit.point, [150.0, 140.0]);
+}
+
+/// Invalid stored radii fall back to the default; inclusive boundaries remain unchanged.
+#[test]
+fn drawing_assistants_loaded_snap_radius_is_bounded() {
+    use photocraft_doc::{DEFAULT_SNAP_RADIUS, MAX_SNAP_RADIUS};
+    let mut doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    for (radius, expected) in [
+        (-1.0, DEFAULT_SNAP_RADIUS),
+        (MAX_SNAP_RADIUS + 1.0, DEFAULT_SNAP_RADIUS),
+        (f64::MAX, DEFAULT_SNAP_RADIUS),
+        (0.0, 0.0),
+        (MAX_SNAP_RADIUS, MAX_SNAP_RADIUS),
+    ] {
+        doc.assistants.snap_radius = radius;
+        let bytes = save_to_bytes(&doc, &SaveOptions::default()).unwrap();
+        let back = load_from_bytes(&bytes).unwrap();
+        assert_eq!(back.assistants.snap_radius, expected, "stored radius {radius}");
+        let mut expected_doc = doc.clone();
+        expected_doc.assistants.snap_radius = expected;
+        assert_eq!(back, expected_doc);
+    }
+}
+
+/// Bundles written before assistants existed (no `assistants` key) load with the default set.
+#[test]
+fn drawing_assistants_missing_in_old_bundles_loads_default() {
+    use photocraft_doc::DrawingAssistants;
+    let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    assert!(doc.assistants.is_empty());
+    let dir = temp_dir("assist-legacy");
+    PcraftWriter::new().save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    let manifest_path = dir.join("manifest.json");
+    let mut manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    // Simulate a pre-assistants bundle: drop the key entirely (new bundles always write it).
+    assert!(manifest["document"].as_object().unwrap().contains_key("assistants"));
+    manifest["document"].as_object_mut().unwrap().remove("assistants");
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let back = load_path(&dir).unwrap();
+    assert_eq!(back.assistants, DrawingAssistants::default());
+    assert_eq!(back.assistants.snap_point([10.0, 10.0]), None, "no guides, no snapping");
+    std::fs::remove_dir_all(dir).unwrap();
+}

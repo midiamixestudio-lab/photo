@@ -698,6 +698,7 @@
 	Rulers	定規
 	Snap	スナップ
 	Snap To	スナップ先
+	Snap to Assistants	アシスタントにスナップ
 	Lock Guides	ガイドをロック
 	Clear Guides	ガイドを消去
 	Clear Selected Artboard Guides	選択したアートボードのガイドを消去
@@ -730,6 +731,7 @@
 	Photography	写真
 	New Workspace…	新規ワークスペース…
 	Delete Workspace…	ワークスペースを削除…
+	Delete this assistant	このアシスタントを削除
 	Reset Workspace	ワークスペースをリセット
 	Reset Tool	ツールをリセット
 	Reset All Tools	すべてのツールをリセット
@@ -1097,6 +1099,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	または 環境設定 › パフォーマンス › Linux ディスプレイサーバー を X11 にすると、PhotoCraft は常に XWayland 上で起動します。
 	Edit › Paste	[編集 › 貼り付け]
 	Duplicate Layers…	レイヤーを複製…
+	Drawing Assistants	描画アシスタント
+	Drawing assistants: snap strokes to guides	描画アシスタント：ストロークをガイドにスナップ
 	Duplicate style	スタイルを複製
 	Edit Toolbar…	ツールバーを編集…
 	Use File › Open, or paste a copied image with {paste}.	[ファイル › 開く] を使うか、コピーした画像を {paste} で貼り付けてください。
@@ -1511,6 +1515,7 @@
 	Star ratio	星の比率
 	Stop playing/recording	再生/記録を停止
 	Straighten	角度補正
+	Straight Line	直線
 	Straighten Layer	レイヤーの角度補正
 	Strength:	強さ:
 	Strikethrough	取り消し線
@@ -2227,6 +2232,7 @@
 	Highlight Clipping Warning (O)	ハイライトのクリッピング警告 (O)
 	Show Lab Color Readouts	Lab カラー値を表示
 	Show Vectorscope	ベクトルスコープを表示
+	Show/hide this assistant	このアシスタントの表示/非表示
 	Show Red at 3 o'clock	赤を3時の位置に表示
 	Show Skin Tone Indicator	スキントーン指標を表示
 	Tone Histogram	階調ヒストグラム
@@ -2901,6 +2907,7 @@ fontWeight	Italic	斜体
 	Liquify	ゆがみ
 	Lock Layers	レイヤーをロック
 	Magnetic Lasso	マグネット投げ縄
+	Magnetism	マグネット
 	Make	作成
 	Make Selection	選択範囲を作成
 	Make Work Path	作業用パスを作成

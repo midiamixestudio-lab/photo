@@ -303,6 +303,7 @@
 	New Video Layer from File…	Dosyadan Yeni Video Katmanı…
 	Duplicate Layer…	Katmanı Çoğalt…
 	Delete Layer	Katmanı Sil
+	Drawing Assistants	Çizim yardımcıları
 	Delete	Sil
 	Rename Layer	Katmanı Yeniden Adlandır
 	Create Layer	Katman Oluştur
@@ -667,6 +668,7 @@
 	Rulers	Cetveller
 	Snap	Yapış
 	Snap To	Şuna Yapış
+	Straight Line	Düz çizgi
 	Lock Guides	Kılavuzları Kilitle
 	Clear Guides	Kılavuzları Temizle
 	Clear Selected Artboard Guides	Seçilen Çalışma Yüzeyi Kılavuzlarını Temizle
@@ -1058,6 +1060,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	Veya Tercihler › Performans › Linux görüntüleme sunucusunu X11: PhotoCraft olarak ayarlayın, ardından her zaman XWayland altında başlar.
 	Edit › Paste	Düzenle › Yapıştır
 	Duplicate Layers…	Katmanları Çoğalt…
+	Drawing assistants: snap strokes to guides	Çizim yardımcıları: fırça darbelerini kılavuzlara yapıştır
+	Snap to Assistants	Yardımcılara yapıştır
 	Duplicate style	Yinelenen stil
 	Edit Toolbar…	Araç Çubuğunu Düzenle…
 	Use File › Open, or paste a copied image with {paste}.	Dosya › Aç'ı kullanın veya kopyalanan görüntüyü {paste} ile yapıştırın.
@@ -1469,6 +1473,7 @@
 	Star ratio	Yıldız oranı
 	Stop playing/recording	Oynatmayı/kaydetmeyi durdur
 	Straighten	Düzelt
+	Show/hide this assistant	Bu yardımcıyı göster/gizle
 	Straighten Layer	Katmanı Düzleştir
 	Strength:	Güç:
 	Strikethrough	Üstü çizili
@@ -2260,6 +2265,7 @@
 	Show Selected Region	Seçilen Bölgeyi Göster
 	Show Skin Tone Indicator	Cilt Tonu Göstergesini Göster
 	Show Vectorscope	Vectorscope'u göster
+	Delete this assistant	Bu yardımcıyı sil
 	Tone Histogram	Ton Histogramı
 	75%	75%
 	80%	80%
@@ -2293,6 +2299,7 @@
 	Couldn't place {name}: {error}	{name} yerleştirilemedi: {error}
 	Full-resolution preview unavailable	Tam çözünürlüklü önizleme kullanılamıyor
 	Magnetic Lasso Tool	Manyetik Kement Aracı
+	Magnetism	Manyetizma
 	Frequency	Frekans
 	Use tablet pressure to change pen width	Kalem genişliğini değiştirmek için tablet basıncını kullanın
 	About	Hakkında

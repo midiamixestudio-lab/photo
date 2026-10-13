@@ -308,6 +308,7 @@
 	New Video Layer from File…	Novi video sloj iz datoteke…
 	Duplicate Layer…	Dupliraj sloj…
 	Delete Layer	Obriši sloj
+	Drawing Assistants	Asistenti za crtanje
 	Delete	Obriši
 	Rename Layer	Preimenuj sloj
 	Create Layer	Napravi sloj
@@ -678,6 +679,7 @@
 	Rulers	Lenjiri
 	Snap	Prianjanje
 	Snap To	Prianjaj uz
+	Straight Line	Prava linija
 	Lock Guides	Zaključaj vodilje
 	Clear Guides	Ukloni vodilje
 	Clear Selected Artboard Guides	Ukloni vodilje izabranih radnih tabli
@@ -1062,6 +1064,8 @@
 	Draw with the Pen tool (P) or make a work path from a selection.	Crtajte alatkom pero (P) ili napravite radnu putanju od selekcije.
 	Drop an image or PSD anywhere to open it.	Prevucite sliku ili PSD bilo gde da biste je otvorili.
 	Duplicate Layers…	Dupliraj slojeve…
+	Drawing assistants: snap strokes to guides	Asistenti za crtanje: prianjanje poteza uz vodilje
+	Snap to Assistants	Prianjaj uz asistente
 	Duplicate style	Dupliraj stil
 	Edit Toolbar…	Uredi traku alatki…
 	Edit in Quick Mask Mode  (Q)	Uredi u režimu brze maske  (Q)
@@ -1473,6 +1477,7 @@
 	Star ratio	Odnos zvezde
 	Stop playing/recording	Zaustavi puštanje/snimanje
 	Straighten	Ispravi
+	Show/hide this assistant	Prikaži/sakrij ovog asistenta
 	Straighten Layer	Ispravi sloj
 	Strength:	Jačina:
 	Strikethrough	Precrtano
@@ -2652,6 +2657,7 @@
 	Highlight Clipping Warning (O)	Upozorenje o odsecanju svetla (O)
 	Show Lab Color Readouts	Prikaži Lab očitavanja boja
 	Show Vectorscope	Prikaži vektorskop
+	Delete this assistant	Obriši ovog asistenta
 	Show Red at 3 o'clock	Prikaži crvenu na poziciji 3 sata
 	Show Skin Tone Indicator	Prikaži indikator tona kože
 	Tone Histogram	Tonski histogram
@@ -2707,6 +2713,7 @@ cameraRaw	Blending	Stapanje
 	Save cancelled	Čuvanje je otkazano
 	Couldn't place {name}: {error}	Postavljanje {name} nije uspelo: {error}
 	Magnetic Lasso Tool	Alatka magnetni laso
+	Magnetism	Magnetizam
 	Frequency	Frekvencija
 	Use tablet pressure to change pen width	Koristi pritisak na tabletu za promenu širine pera
 

@@ -15,6 +15,7 @@ pub mod align_cmds;
 mod allocation;
 pub mod analysis_cmds;
 pub mod artboard_cmds;
+pub mod assistant_cmds;
 pub mod atn_cmds;
 pub mod automate_cmds;
 pub mod background_cmds;

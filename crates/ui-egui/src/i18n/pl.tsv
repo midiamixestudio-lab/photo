@@ -319,6 +319,7 @@
 	New Video Layer from File…	Nowa warstwa wideo z pliku…
 	Duplicate Layer…	Duplikuj warstwę…
 	Delete Layer	Usuń warstwę
+	Drawing Assistants	Asystenci rysowania
 	Delete	Usuń
 	Rename Layer	Zmień nazwę warstwy
 	Create Layer	Utwórz warstwę
@@ -697,6 +698,7 @@
 	Rulers	Linijki
 	Snap	Przyciągaj
 	Snap To	Przyciągaj do
+	Straight Line	Linia prosta
 	Lock Guides	Zablokuj prowadnice
 	Clear Guides	Usuń prowadnice
 	Clear Selected Artboard Guides	Usuń prowadnice wybranego obszaru roboczego
@@ -1094,6 +1096,8 @@
 	Native file drag-and-drop is unavailable	Natywne przeciąganie plików jest niedostępne
 	Native file drag-and-drop is not supported on Wayland yet. Use File › Open, or run PhotoCraft under XWayland with `WAYLAND_DISPLAY= photocraft`.	Natywne przeciąganie plików nie jest jeszcze obsługiwane w Waylandzie. Użyj Plik › Otwórz lub uruchom PhotoCraft w XWayland poleceniem `WAYLAND_DISPLAY= photocraft`.
 	Duplicate Layers…	Duplikuj warstwy…
+	Drawing assistants: snap strokes to guides	Asystenci rysowania: przyciąganie pociągnięć do prowadnic
+	Snap to Assistants	Przyciągaj do asystentów
 	Duplicate style	Duplikuj styl
 	Edit Toolbar…	Edytuj pasek narzędzi…
 	Use File › Open to open an image.	Użyj Plik › Otwórz, aby otworzyć obraz.
@@ -1507,6 +1511,7 @@
 	Star ratio	Proporcja gwiazdy
 	Stop playing/recording	Zatrzymaj odtwarzanie/nagrywanie
 	Straighten	Wyprostuj
+	Show/hide this assistant	Pokaż/ukryj tego asystenta
 	Straighten Layer	Wyprostuj warstwę
 	Strength:	Siła:
 	Strikethrough	Przekreślenie
@@ -2672,6 +2677,7 @@
 	Highlight Clipping Warning (O)	Ostrzeżenie o obcięciu świateł (O)
 	Show Lab Color Readouts	Pokaż odczyty kolorów Lab
 	Show Vectorscope	Pokaż wektoroskop
+	Delete this assistant	Usuń tego asystenta
 	Show Red at 3 o'clock	Pokaż czerwień na godzinie 3
 	Show Skin Tone Indicator	Pokaż wskaźnik odcienia skóry
 	Tone Histogram	Histogram tonalny
@@ -2742,6 +2748,7 @@ cameraRaw	Roughness	Chropowatość
 	Save failed: {error}	Zapis nie powiódł się: {error}
 	Save cancelled	Anulowano zapis
 	Magnetic Lasso Tool	Narzędzie Lasso magnetyczne
+	Magnetism	Magnetyzm
 	Frequency	Częstotliwość
 	Use tablet pressure to change pen width	Użyj nacisku tabletu do zmiany szerokości pióra
 	Vertical Type Tool	Narzędzie Tekst pionowy

@@ -169,6 +169,7 @@
 	Duplicate…	Дублювати…
 	Delete	Видалити
 	Delete Layer	Видалити шар
+	Drawing Assistants	Асистенти малювання
 	Delete Layers	Видалити шари
 	Rename Layer	Перейменувати шар
 	Layer From Background…	Шар із фону…
@@ -438,6 +439,7 @@
 	Slices	Фрагменти
 	Snap	Прив'язка
 	Snap To	Прив'язати до
+	Straight Line	Пряма лінія
 	Lock Guides	Заблокувати напрямні
 	Clear Guides	Очистити напрямні
 	New Guide…	Нова напрямна…
@@ -700,6 +702,8 @@
 # Layers panel
 	Layers to Files…	Шари у файли…
 	Duplicate Layers…	Дублювати шари…
+	Drawing assistants: snap strokes to guides	Асистенти малювання: прив'язка мазків до напрямних
+	Snap to Assistants	Прив'язати до асистентів
 	Group name	Назва групи
 	New Group	Нова група
 	Layer Comp	Композиція шарів
@@ -2221,6 +2225,7 @@
 	Star ratio	Пропорції зірки
 	Std Dev:	Станд. відхилення:
 	Straighten	Випрямити
+	Show/hide this assistant	Показати/приховати цього асистента
 	Straighten Layer	Випрямити шар
 	Strength:	Сила:
 	Stroke	Обведення
@@ -2482,6 +2487,7 @@
 	Highlight Clipping Warning (O)	Попередження про втрату деталей у світлих ділянках (O)
 	Show Lab Color Readouts	Показувати колірні значення Lab
 	Show Vectorscope	Показувати вектороскоп
+	Delete this assistant	Видалити цього асистента
 	Show Red at 3 o'clock	Показувати червоний на позиції 3 години
 	Show Skin Tone Indicator	Показувати індикатор тону шкіри
 	Tone Histogram	Тонова гістограма
@@ -2546,6 +2552,7 @@ cameraRaw	Roughness	Шорсткість
 	Save cancelled	Збереження скасовано
 	Couldn't place {name}: {error}	Не вдалося розмістити {name}: {error}
 	Magnetic Lasso Tool	Інструмент «Магнітне ласо»
+	Magnetism	Магнетизм
 	Frequency	Частота
 	Use tablet pressure to change pen width	Використовувати натиск планшета для зміни ширини пера
 

@@ -313,6 +313,7 @@
 	New Video Layer from File…	Nova camada de vídeo a partir de arquivo…
 	Duplicate Layer…	Duplicar camada…
 	Delete Layer	Excluir camada
+	Drawing Assistants	Assistentes de desenho
 	Delete	Excluir
 	Rename Layer	Renomear camada
 	Create Layer	Criar camada
@@ -682,6 +683,7 @@
 	Rulers	Réguas
 	Snap	Encaixar
 	Snap To	Encaixar em
+	Straight Line	Linha reta
 	Lock Guides	Bloquear guias
 	Clear Guides	Limpar guias
 	Clear Selected Artboard Guides	Limpar guias da prancheta selecionada
@@ -1075,6 +1077,8 @@
 	Draw with the Pen tool (P) or make a work path from a selection.	Desenhe com a ferramenta Caneta (P) ou crie um demarcador de trabalho a partir de uma seleção.
 	Drop an image or PSD anywhere to open it.	Solte uma imagem ou um PSD em qualquer lugar para abri-lo.
 	Duplicate Layers…	Duplicar camadas…
+	Drawing assistants: snap strokes to guides	Assistentes de desenho: encaixar traços nas guias
+	Snap to Assistants	Encaixar nos assistentes
 	Duplicate style	Duplicar estilo
 	Edit Toolbar…	Editar barra de ferramentas…
 	Edit in Quick Mask Mode  (Q)	Editar no modo de máscara rápida  (Q)
@@ -1489,6 +1493,7 @@
 	Star ratio	Proporção da estrela
 	Stop playing/recording	Parar reprodução/gravação
 	Straighten	Endireitar
+	Show/hide this assistant	Mostrar/ocultar este assistente
 	Straighten Layer	Endireitar camada
 	Strength:	Intensidade:
 	Strikethrough	Tachado
@@ -2662,6 +2667,7 @@
 	Highlight Clipping Warning (O)	Aviso de corte de realces (O)
 	Show Lab Color Readouts	Mostrar leituras de cor Lab
 	Show Vectorscope	Mostrar vetorscópio
+	Delete this assistant	Excluir este assistente
 	Show Red at 3 o'clock	Mostrar vermelho na posição de 3 horas
 	Show Skin Tone Indicator	Mostrar indicador de tom de pele
 	Tone Histogram	Histograma de tons
@@ -2732,6 +2738,7 @@ cameraRaw	Whites	Brancos
 	Couldn't place {name}: {error}	Não foi possível inserir {name}: {error}
 	Full-resolution preview unavailable	Pré-visualização em resolução total indisponível
 	Magnetic Lasso Tool	Ferramenta Laço magnético
+	Magnetism	Magnetismo
 	Frequency	Frequência
 	Use tablet pressure to change pen width	Usar a pressão da mesa digitalizadora para alterar a largura da caneta
 

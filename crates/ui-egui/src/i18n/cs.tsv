@@ -327,6 +327,7 @@
 	New Video Layer from File…	Nová video vrstva ze souboru…
 	Duplicate Layer…	Duplikovat vrstvu…
 	Delete Layer	Odstranit vrstvu
+	Drawing Assistants	Asistenti kreslení
 	Delete	Odstranit
 	Rename Layer	Přejmenovat vrstvu
 	Create Layer	Vytvořit vrstvu
@@ -704,6 +705,7 @@
 	Rulers	Pravítka
 	Snap	Přichytávat
 	Snap To	Přichytávat k
+	Straight Line	Rovná čára
 	Lock Guides	Zamknout vodítka
 	Clear Guides	Vymazat vodítka
 	Clear Selected Artboard Guides	Vymazat vodítka vybrané kreslicí plochy
@@ -1109,6 +1111,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	Nebo nastavte Předvolby › Výkon › Zobrazovací server Linuxu na X11: PhotoCraft se pak vždy spustí v XWayland.
 	Edit › Paste	Úpravy › Vložit
 	Duplicate Layers…	Duplikovat vrstvy…
+	Drawing assistants: snap strokes to guides	Asistenti kreslení: přichytávání tahů k vodítkům
+	Snap to Assistants	Přichytávat k asistentům
 	Duplicate style	Duplikovat styl
 	Edit Toolbar…	Upravit panel nástrojů…
 	Use File › Open, or paste a copied image with {paste}.	Použijte Soubor › Otevřít, nebo vložte zkopírovaný obrázek pomocí {paste}.
@@ -1524,6 +1528,7 @@
 	Star ratio	Poměr hvězdy
 	Stop playing/recording	Zastavit přehrávání/záznam
 	Straighten	Narovnat
+	Show/hide this assistant	Zobrazit/skrýt tohoto asistenta
 	Straighten Layer	Narovnat vrstvu
 	Strength:	Síla:
 	Strikethrough	Přeškrtnutí
@@ -2247,6 +2252,7 @@
 	Highlight Clipping Warning (O)	Varování oříznutí světel (O)
 	Show Lab Color Readouts	Zobrazit hodnoty barev Lab
 	Show Vectorscope	Zobrazit vektorskop
+	Delete this assistant	Odstranit tohoto asistenta
 	Show Red at 3 o'clock	Zobrazit červenou na třetí hodině
 	Show Skin Tone Indicator	Zobrazit indikátor pleťových tónů
 	Tone Histogram	Histogram tónů
@@ -2304,6 +2310,7 @@ cameraRaw	Color	Barvy
 	Save cancelled	Ukládání zrušeno
 	Couldn't place {name}: {error}	Nelze umístit {name}: {error}
 	Magnetic Lasso Tool	Nástroj magnetické laso
+	Magnetism	Magnetismus
 	Frequency	Frekvence
 	Use tablet pressure to change pen width	Měnit šířku pera přítlakem tabletu
 

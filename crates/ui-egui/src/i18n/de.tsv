@@ -326,6 +326,7 @@
 	New Video Layer from File…	Neue Videoebene aus Datei…
 	Duplicate Layer…	Ebene duplizieren…
 	Delete Layer	Ebene löschen
+	Drawing Assistants	Zeichenassistenten
 	Delete	Löschen
 	Rename Layer	Ebene umbenennen
 	Create Layer	Ebene erstellen
@@ -693,6 +694,7 @@
 	Rulers	Lineale
 	Snap	Einrasten
 	Snap To	Einrasten auf
+	Straight Line	Gerade Linie
 	Lock Guides	Hilfslinien sperren
 	Clear Guides	Hilfslinien löschen
 	Clear Selected Artboard Guides	Hilfslinien des ausgewählten Zeichenbereichs löschen
@@ -1092,6 +1094,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	Oder stelle Voreinstellungen › Leistung › Linux-Anzeigeserver auf X11: PhotoCraft startet dann immer unter XWayland.
 	Edit › Paste	Bearbeiten › Einfügen
 	Duplicate Layers…	Ebenen duplizieren…
+	Drawing assistants: snap strokes to guides	Zeichenassistenten: Striche an Hilfslinien einrasten
+	Snap to Assistants	An Assistenten einrasten
 	Duplicate style	Stil duplizieren
 	Edit Toolbar…	Werkzeugleiste bearbeiten…
 	Use File › Open, or paste a copied image with {paste}.	Nutze Datei › Öffnen oder füge ein kopiertes Bild mit {paste} ein.
@@ -1507,6 +1511,7 @@
 	Star ratio	Sternverhältnis
 	Stop playing/recording	Wiedergabe/Aufnahme stoppen
 	Straighten	Begradigen
+	Show/hide this assistant	Diesen Assistenten ein-/ausblenden
 	Straighten Layer	Ebene begradigen
 	Strength:	Stärke:
 	Strikethrough	Durchgestrichen
@@ -2311,6 +2316,7 @@
 	Show Selected Region	Ausgewählten Bereich anzeigen
 	Show Skin Tone Indicator	Hautton-Indikator anzeigen
 	Show Vectorscope	Vektorskop anzeigen
+	Delete this assistant	Diesen Assistenten löschen
 	Tone Histogram	Tonwerthistogramm
 	75%	75 %
 	80%	80 %
@@ -2346,6 +2352,7 @@
 	Couldn't place {name}: {error}	{name} konnte nicht platziert werden: {error}
 	Full-resolution preview unavailable	Vorschau in voller Auflösung nicht verfügbar
 	Magnetic Lasso Tool	Magnetisches-Lasso-Werkzeug
+	Magnetism	Magnetismus
 	Frequency	Frequenz
 	Use tablet pressure to change pen width	Tablettdruck zum Ändern der Stiftbreite verwenden
 

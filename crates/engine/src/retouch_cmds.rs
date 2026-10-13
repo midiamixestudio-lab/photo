@@ -102,6 +102,9 @@ fn parse_brush(s: &Session, p: &Value, cmd: &str) -> Result<(Stroke, Option<Laye
         return Err(bad(cmd, "`points` is empty"));
     }
     crate::brush_cmds::check_coords(&pts, cmd)?;
+    // Drawing assistants constrain retouching strokes like painting ones: the clone source
+    // offset, history sampling and dab effects all follow the snapped target.
+    let pts = crate::assistant_cmds::snap_points(s, &pts);
     let brush = stroke_brush(&s.tools.brush, p);
     crate::brush_cmds::validate_brush(&brush, cmd)?;
     if crate::channel_cmds::is_channel_target(p) {
@@ -486,7 +489,10 @@ impl LiveRetouch {
     /// Only the position and pressure of `pts` are used: the commands take no tilt or times.
     pub fn push(&mut self, pts: &[StrokePoint]) -> Result<Rect> {
         crate::brush_cmds::check_coords(pts, &self.cmd)?;
-        let pts: Vec<_> = pts.iter().map(|q| StrokePoint::new(q.x, q.y, q.pressure)).collect();
+        // The preview snaps exactly like the commit, against the assistants the stroke started
+        // with (like the brush it captured at `begin`).
+        let snapped = crate::assistant_cmds::snap_stroke_points(&self.pre.assistants, pts);
+        let pts: Vec<_> = snapped.iter().map(|q| StrokePoint::new(q.x, q.y, q.pressure)).collect();
         self.points.extend_from_slice(&pts);
         self.renderer.push(&pts);
         if self.cmd == "paint.cloneStamp" && flag(&self.params, "wrap", false) {
@@ -1118,7 +1124,10 @@ impl LiveDab {
     /// Invalid coordinates reject the whole batch without changing the preview.
     pub fn push(&mut self, pts: &[StrokePoint]) -> Result<Rect> {
         crate::brush_cmds::check_coords(pts, &self.cmd)?;
-        self.renderer.push(pts);
+        // The preview snaps exactly like the commit, against the assistants the stroke started
+        // with (like the brush it captured at `begin`).
+        let snapped = crate::assistant_cmds::snap_stroke_points(&self.doc.assistants, pts);
+        self.renderer.push(&snapped);
         let ctx = self.renderer.ctx.clone();
         let new: Vec<_> = self.renderer.dabs().get(self.done..).unwrap_or_default().to_vec();
         let mut dmg = Rect::EMPTY;

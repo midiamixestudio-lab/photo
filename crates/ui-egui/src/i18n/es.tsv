@@ -323,6 +323,7 @@
 	New Video Layer from File…	Nueva capa de vídeo desde archivo…
 	Duplicate Layer…	Duplicar capa…
 	Delete Layer	Eliminar capa
+	Drawing Assistants	Asistentes de dibujo
 	Delete	Eliminar
 	Rename Layer	Cambiar nombre de capa
 	Create Layer	Crear capa
@@ -700,6 +701,7 @@
 	Rulers	Reglas
 	Snap	Ajustar
 	Snap To	Ajustar a
+	Straight Line	Línea recta
 	Lock Guides	Bloquear guías
 	Clear Guides	Borrar guías
 	Clear Selected Artboard Guides	Borrar guías de la mesa de trabajo seleccionada
@@ -1098,6 +1100,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	O establezca Preferencias › Rendimiento › Servidor de pantalla de Linux en X11: PhotoCraft se iniciará siempre con XWayland.
 	Edit › Paste	Edición › Pegar
 	Duplicate Layers…	Duplicar capas…
+	Drawing assistants: snap strokes to guides	Asistentes de dibujo: ajustar trazos a las guías
+	Snap to Assistants	Ajustar a los asistentes
 	Duplicate style	Duplicar estilo
 	Edit Toolbar…	Editar barra de herramientas…
 	Use File › Open, or paste a copied image with {paste}.	Use Archivo › Abrir, o pegue una imagen copiada con {paste}.
@@ -1513,6 +1517,7 @@
 	Star ratio	Relación de la estrella
 	Stop playing/recording	Detener reproducción/grabación
 	Straighten	Enderezar
+	Show/hide this assistant	Mostrar/ocultar este asistente
 	Straighten Layer	Enderezar capa
 	Strength:	Intensidad:
 	Strikethrough	Tachado
@@ -2319,6 +2324,7 @@
 	Highlight Clipping Warning (O)	Aviso de recorte de luces (O)
 	Show Lab Color Readouts	Mostrar valores de color Lab
 	Show Vectorscope	Mostrar vectorscopio
+	Delete this assistant	Eliminar este asistente
 	Show Red at 3 o'clock	Mostrar rojo a las 3 en punto
 	Show Skin Tone Indicator	Mostrar indicador de tono de piel
 	Tone Histogram	Histograma tonal
@@ -2376,6 +2382,7 @@ cameraRaw	Amount	Cantidad
 	Save failed: {error}	Error al guardar: {error}
 	Save cancelled	Guardado cancelado
 	Magnetic Lasso Tool	Herramienta Lazo magnético
+	Magnetism	Magnetismo
 	Frequency	Frecuencia
 	Use tablet pressure to change pen width	Usar la presión de la tableta para cambiar la anchura de la pluma
 

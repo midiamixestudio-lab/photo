@@ -403,6 +403,7 @@ fn with_blend_mode(mut b: BrushSettings, p: &Value) -> BrushSettings {
 /// `paint.stroke`: the Brush (and Eraser) tool.
 pub fn paint_stroke(s: &mut Session, p: &Value) -> Result<Value> {
     let pts = parse_points(p, "paint.stroke")?;
+    let pts = crate::assistant_cmds::snap_points(s, &pts);
     let brush = with_blend_mode(resolve_brush(s, p, "paint.stroke")?, p);
     let label = if brush.erase && !clear_mode(p) { "Eraser" } else { "Brush Tool" };
     stroke_with(s, "paint.stroke", p, label, brush, pts, false)
@@ -564,6 +565,10 @@ impl LiveStroke {
     /// Invalid coordinates reject the whole batch without changing the preview.
     pub fn push(&mut self, pts: &[StrokePoint]) -> Result<Rect> {
         check_coords(pts, &self.cmd)?;
+        // The preview snaps exactly like the commit, against the assistants the stroke started
+        // with (like the brush it captured at `begin`).
+        let snapped = crate::assistant_cmds::snap_stroke_points(&self.doc.assistants, pts);
+        let pts = &snapped;
         self.points.extend_from_slice(pts);
         let cmyk = self.cmyk.clone();
         photocraft_color::convert::with_cmyk_space(cmyk.as_ref(), || {
@@ -618,6 +623,7 @@ impl LiveStroke {
 
 fn pencil(s: &mut Session, p: &Value) -> Result<Value> {
     let pts = parse_points(p, "paint.pencil")?;
+    let pts = crate::assistant_cmds::snap_points(s, &pts);
     let brush = pencil_brush(s, p)?;
     let label = if brush.erase && !clear_mode(p) { "Eraser" } else { "Pencil" };
     stroke_with(s, "paint.pencil", p, label, brush, pts, flag(p, "autoErase", false))
@@ -630,6 +636,7 @@ fn pct(p: &Value, k: &str, d: f32) -> f32 {
 fn mixer_brush(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "paint.mixerBrush";
     let pts = parse_points(p, cmd)?;
+    let pts = crate::assistant_cmds::snap_points(s, &pts);
     let brush = resolve_brush(s, p, cmd)?;
     // The brush's Mixer Brush options, overridden by the scalar params.
     let bm = &brush.mixer;
@@ -683,6 +690,7 @@ fn color_replacement_setup(s: &Session, p: &Value) -> Result<(Stroke, ReplaceSet
         return Err(bad(cmd, format!("Color Replacement paints layer pixels only (`target` {t} is not \"pixels\")")));
     }
     let pts = parse_points(p, cmd)?;
+    let pts = crate::assistant_cmds::snap_points(s, &pts);
     let brush = resolve_brush(s, p, cmd)?;
     fn parse<T: serde::de::DeserializeOwned>(p: &Value, cmd: &str, k: &str) -> Result<Option<T>> {
         p.get(k).cloned().map(serde_json::from_value).transpose().map_err(|e| bad(cmd, format!("`{k}`: {e}")))

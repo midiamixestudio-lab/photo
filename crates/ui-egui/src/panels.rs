@@ -1506,6 +1506,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 // action available for Brush, Pencil and Eraser in every palette (#2659).
                 if matches!(tool, Tool::Brush | Tool::Pencil | Tool::Eraser) {
                     crate::symmetry_ui::menu(app, ui);
+                    crate::assistants_ui::menu(app, ui);
                 }
                 crate::brush_panel::commit_gesture(app, ui.ctx(), &brush_before, &brush);
             });

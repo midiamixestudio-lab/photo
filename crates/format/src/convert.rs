@@ -4,9 +4,10 @@
 use std::sync::Arc;
 
 use photocraft_color::{PixelFormat, SampleType};
+use photocraft_doc::assistants::is_valid_snap_radius;
 use photocraft_doc::{
-    AlphaChannel, CompAppearance, CompLayerState, DocId, Document, Effects, FillCache, Group, Layer, LayerComp, LayerContent, LayerId, LayerMask, Metadata,
-    NamedPath, Pattern, ShapeLayer, SmartContentsId, SmartObject, SmartSource, TextLayer,
+    AlphaChannel, AssistantId, CompAppearance, CompLayerState, DocId, Document, DrawingAssistantItem, DrawingAssistants, Effects, FillCache, Group, Layer,
+    LayerComp, LayerContent, LayerId, LayerMask, Metadata, NamedPath, Pattern, ShapeLayer, SmartContentsId, SmartObject, SmartSource, TextLayer,
 };
 use photocraft_geom::{TILE_SIZE, TileCoord};
 use photocraft_raster::{Surface, Tile, decode_pixel, encode_pixel};
@@ -17,6 +18,10 @@ use crate::{FormatError, Result};
 /// Deepest group nesting a bundle may hold — the one nesting limit every consumer of the layer
 /// tree shares; see [`photocraft_doc::MAX_GROUP_DEPTH`].
 pub use photocraft_doc::MAX_GROUP_DEPTH;
+
+/// Most drawing assistants one bundle may hold. The engine caps new guides far lower
+/// ([`photocraft_doc::MAX_ASSISTANTS`]); this only bounds corrupt files.
+const MAX_ASSISTANTS_ON_LOAD: usize = 1024;
 
 fn too_deep() -> FormatError {
     FormatError::LimitExceeded(format!("layer groups nested deeper than {MAX_GROUP_DEPTH}"))
@@ -261,6 +266,7 @@ pub(crate) fn doc_m(d: &Document, sink: &mut dyn Sink) -> DocM {
         notes: d.notes.clone(),
         text_styles: d.text_styles.clone(),
         slices: d.slices.clone(),
+        assistants: d.assistants.clone(),
     }
 }
 
@@ -565,6 +571,9 @@ impl Loader<'_> {
             }
             let mut max = m.id;
             max_ids(&m.layers, 0, &mut max)?;
+            for a in &m.assistants.items {
+                max = max.max(a.id.0);
+            }
             self.preserve_ids = reserve_ids_through(max);
         }
         let layers = m.layers.iter().map(|l| self.layer(l, 0)).collect::<Result<Vec<_>>>()?;
@@ -617,6 +626,7 @@ impl Loader<'_> {
             }
         }
         let id = if self.preserve_ids { DocId(m.id) } else { DocId::fresh() };
+        let assistants = self.assistants(&m.assistants)?;
         Ok(Document {
             id,
             name: m.name.clone(),
@@ -649,6 +659,31 @@ impl Loader<'_> {
             notes: m.notes.clone(),
             text_styles: m.text_styles.clone(),
             slices,
+            assistants,
+        })
+    }
+
+    /// Drawing assistants: ids stay stable when the bundle keeps its ids, else are minted fresh.
+    /// Geometry is kept verbatim (even degenerate hand-edited guides: the snapping and overlay
+    /// code defends against those at use time), but the count is bounded so a corrupt bundle
+    /// cannot make every frame walk millions of guides.
+    fn assistants(&mut self, m: &DrawingAssistants) -> Result<DrawingAssistants> {
+        if m.items.len() > MAX_ASSISTANTS_ON_LOAD {
+            return Err(FormatError::LimitExceeded(format!("document holds {} drawing assistants (max {MAX_ASSISTANTS_ON_LOAD})", m.items.len())));
+        }
+        Ok(DrawingAssistants {
+            enabled: m.enabled,
+            snap_radius: if is_valid_snap_radius(m.snap_radius) { m.snap_radius } else { photocraft_doc::DEFAULT_SNAP_RADIUS },
+            items: m
+                .items
+                .iter()
+                .map(|a| DrawingAssistantItem {
+                    id: if self.preserve_ids { a.id } else { AssistantId::fresh() },
+                    name: a.name.clone(),
+                    visible: a.visible,
+                    kind: a.kind.clone(),
+                })
+                .collect(),
         })
     }
 

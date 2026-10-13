@@ -318,6 +318,7 @@
 	New Video Layer from File…	Nouveau calque vidéo à partir d'un fichier…
 	Duplicate Layer…	Dupliquer le calque…
 	Delete Layer	Supprimer le calque
+	Drawing Assistants	Assistants de dessin
 	Delete	Supprimer
 	Rename Layer	Renommer le calque
 	Create Layer	Créer un calque
@@ -688,6 +689,7 @@
 	Rulers	Règles
 	Snap	Aimanter
 	Snap To	Aimanter à
+	Straight Line	Ligne droite
 	Lock Guides	Verrouiller les repères
 	Clear Guides	Effacer les repères
 	Clear Selected Artboard Guides	Effacer les repères du plan de travail sélectionné
@@ -1079,6 +1081,8 @@
 	Draw with the Pen tool (P) or make a work path from a selection.	Dessinez avec l'outil Plume (P) ou créez un tracé de travail à partir d'une sélection.
 	Drop an image or PSD anywhere to open it.	Déposez une image ou un PSD n'importe où pour l'ouvrir.
 	Duplicate Layers…	Dupliquer les calques…
+	Drawing assistants: snap strokes to guides	Assistants de dessin : aimanter les tracés aux repères
+	Snap to Assistants	Aimanter aux assistants
 	Duplicate style	Dupliquer le style
 	Edit Toolbar…	Modifier la barre d'outils…
 	Edit in Quick Mask Mode  (Q)	Modifier en mode masque rapide  (Q)
@@ -1493,6 +1497,7 @@
 	Star ratio	Proportion de l'étoile
 	Stop playing/recording	Arrêter la lecture/l'enregistrement
 	Straighten	Redresser
+	Show/hide this assistant	Afficher/masquer cet assistant
 	Straighten Layer	Redresser le calque
 	Strength:	Intensité :
 	Strikethrough	Barré
@@ -2671,6 +2676,7 @@
 	Highlight Clipping Warning (O)	Avertissement d'écrêtage des tons clairs (O)
 	Show Lab Color Readouts	Afficher les valeurs de couleur Lab
 	Show Vectorscope	Afficher le vectorscope
+	Delete this assistant	Supprimer cet assistant
 	Show Red at 3 o'clock	Afficher le rouge à 3 heures
 	Show Skin Tone Indicator	Afficher l'indicateur de tons chair
 	Tone Histogram	Histogramme des tons
@@ -2727,6 +2733,7 @@ cameraRaw	Blending	Fusion
 	Save cancelled	Enregistrement annulé
 	Couldn't place {name}: {error}	Impossible d'importer {name} : {error}
 	Magnetic Lasso Tool	Outil Lasso magnétique
+	Magnetism	Magnétisme
 	Frequency	Fréquence
 	Use tablet pressure to change pen width	Utiliser la pression de la tablette pour modifier la largeur de la plume
 

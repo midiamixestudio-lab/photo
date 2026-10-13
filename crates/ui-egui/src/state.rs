@@ -1077,6 +1077,10 @@ pub struct UiState {
     /// Temporary symmetry-axis editing, exposed to automation but never restored from settings.
     #[serde(default, skip_deserializing)]
     pub symmetry_transform: Option<crate::symmetry_ui::Transform>,
+    /// A drawing-assistant handle drag in progress (canvas overlay owns the pointer meanwhile).
+    /// Transient pointer state, never serialized.
+    #[serde(skip)]
+    pub assistant_drag: Option<crate::assistants_ui::AssistantDrag>,
     /// The Properties panel's armed Levels/Curves eyedropper on an adjustment layer (`layer_picker`),
     /// exposed to automation but never restored from settings.
     #[serde(default, skip_deserializing)]
@@ -1280,6 +1284,7 @@ impl Default for UiState {
             transform: None,
             transform_unlinked: false,
             symmetry_transform: None,
+            assistant_drag: None,
             layer_picker: None,
             mask_target: false,
             vector_mask_target: false,

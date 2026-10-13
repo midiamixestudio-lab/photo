@@ -531,6 +531,7 @@
 	Define Pattern	Mintázat megadása
 	Delete and Fill Selection	Kijelölés törlése és kitöltése
 	Delete Layer	Réteg törlése
+	Drawing Assistants	Rajzsegédek
 	Delete Layer Mask	Rétegmaszk törlése
 	Delete Layers	Rétegek törlése
 	Delete Vector Mask	Vektormaszk törlése
@@ -546,6 +547,8 @@
 	Document Bounds	Dokumentum határai
 	Duotone…	Kéttónusú…
 	Duplicate Layers…	Rétegek kettőzése…
+	Drawing assistants: snap strokes to guides	Rajzsegédek: vonások illesztése segédvonalakhoz
+	Snap to Assistants	Illesztés a segédekhez
 	Dust & Scratches…	Por és karcolások…
 	DVCPRO HD 1080/HDV 1080 (1.5)	DVCPRO HD 1080/HDV 1080 (1,5)
 	East Asian Features	Kelet-ázsiai funkciók
@@ -794,6 +797,7 @@
 	Smooth	Sima
 	Snap	Illesztés
 	Snap To	Illesztési célok
+	Straight Line	Egyenes vonal
 	Solarize	Szolarizáció
 	Solarized Dark Theme	Solarized sötét téma
 	Spherize…	Gömbösítés…
@@ -2384,6 +2388,7 @@ navigator	Zoom	Nagyítás mértéke
 	Stippled	Pontozott
 	Stops	Átmenetpontok
 	Straighten	Kiegyenesítés
+	Show/hide this assistant	A segéd megjelenítése/elrejtése
 	Straighten Layer	Réteg kiegyenesítése
 	Stroke Detail	Vonás részletessége
 	Stroke Direction	Vonás iránya
@@ -2548,6 +2553,7 @@ navigator	Zoom	Nagyítás mértéke
 	Show Selected Region	Kijelölt terület megjelenítése
 	Show Skin Tone Indicator	Bőrtónusjelző megjelenítése
 	Show Vectorscope	Vektorszkóp megjelenítése
+	Delete this assistant	A segéd törlése
 	Temperature	Színhőmérséklet
 	Tint	Színezet
 	Tone Histogram	Tónushisztogram
@@ -3340,6 +3346,7 @@ cameraRaw	Yellow	Sárga
 	Magic Wand Tool	Varázspálca
 	Magnetic Lasso	Mágneses lasszó
 	Magnetic Lasso Tool	Mágneses lasszó
+	Magnetism	Mágnesesség
 	Make Selection	Kijelölés készítése
 	Make work path from selection	Munkaútvonal készítése a kijelölésből
 	Manual	Kézi

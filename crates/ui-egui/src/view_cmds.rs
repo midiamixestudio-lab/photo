@@ -30,6 +30,7 @@ pub struct Show {
     pub count: bool,
     pub canvas_guides: bool,
     pub artboard_guides: bool,
+    pub assistants: bool,
 }
 
 impl Default for Show {
@@ -48,6 +49,7 @@ impl Default for Show {
             count: true,
             canvas_guides: true,
             artboard_guides: true,
+            assistants: true,
         }
     }
 }
@@ -239,6 +241,7 @@ fn show_slot<'a>(s: &'a mut Show, key: &str) -> Option<&'a mut bool> {
         "count" => &mut s.count,
         "canvasGuides" => &mut s.canvas_guides,
         "artboardGuides" => &mut s.artboard_guides,
+        "assistants" => &mut s.assistants,
         _ => return None,
     })
 }
@@ -255,7 +258,7 @@ fn snap_slot<'a>(s: &'a mut SnapTo, key: &str) -> Option<&'a mut bool> {
 }
 
 /// Every [`show_slot`] key.
-const SHOW_KEYS: [&str; 13] = [
+const SHOW_KEYS: [&str; 14] = [
     "layerEdges",
     "selectionEdges",
     "targetPath",
@@ -269,6 +272,7 @@ const SHOW_KEYS: [&str; 13] = [
     "count",
     "canvasGuides",
     "artboardGuides",
+    "assistants",
 ];
 /// Every [`snap_slot`] key.
 const SNAP_KEYS: [&str; 5] = ["guides", "grid", "layers", "slices", "documentBounds"];

@@ -309,6 +309,7 @@
 	New Video Layer from File…	파일에서 새 비디오 레이어…
 	Duplicate Layer…	레이어 복제…
 	Delete Layer	레이어 삭제
+	Drawing Assistants	그리기 도우미
 	Delete	삭제
 	Rename Layer	레이어 이름 바꾸기
 	Create Layer	레이어 만들기
@@ -675,6 +676,7 @@
 	Rulers	눈금자
 	Snap	스냅
 	Snap To	스냅 대상
+	Straight Line	직선
 	Lock Guides	안내선 잠금
 	Clear Guides	안내선 지우기
 	Clear Selected Artboard Guides	선택한 아트보드 안내선 지우기
@@ -1070,6 +1072,8 @@
 	Draw with the Pen tool (P) or make a work path from a selection.	펜 도구(P)로 그리거나 선택 영역에서 작업 패스를 만드세요.
 	Drop an image or PSD anywhere to open it.	이미지나 PSD를 아무 곳에나 놓아 여세요.
 	Duplicate Layers…	레이어 복제…
+	Drawing assistants: snap strokes to guides	그리기 도우미: 스트로크를 안내선에 스냅
+	Snap to Assistants	도우미에 스냅
 	Duplicate style	스타일 복제
 	Edit Toolbar…	도구 모음 편집…
 	Edit in Quick Mask Mode  (Q)	빠른 마스크 모드에서 편집  (Q)
@@ -1483,6 +1487,7 @@
 	Star ratio	별 비율
 	Stop playing/recording	재생/기록 중지
 	Straighten	수평 맞추기
+	Show/hide this assistant	이 도우미 표시/숨기기
 	Straighten Layer	레이어 수평 맞추기
 	Strength:	강도:
 	Strikethrough	취소선
@@ -2204,6 +2209,7 @@
 	Highlight Clipping Warning (O)	밝은 영역 클리핑 경고 (O)
 	Show Lab Color Readouts	Lab 색상 값 표시
 	Show Vectorscope	벡터스코프 표시
+	Delete this assistant	이 도우미 삭제
 	Show Red at 3 o'clock	빨강을 3시 방향에 표시
 	Show Skin Tone Indicator	피부색 표시기 표시
 	Tone Histogram	명도 히스토그램
@@ -2894,6 +2900,7 @@ cameraRaw	Color	색상
 	Save cancelled	저장이 취소되었습니다
 	Couldn't place {name}: {error}	{name}을(를) 가져올 수 없습니다: {error}
 	Magnetic Lasso Tool	자석 올가미 도구
+	Magnetism	마그넷
 	Frequency	빈도
 	Use tablet pressure to change pen width	태블릿 압력을 사용하여 펜 폭 변경
 

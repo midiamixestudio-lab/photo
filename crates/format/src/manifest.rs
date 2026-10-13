@@ -9,7 +9,8 @@
 
 use photocraft_color::{BlendMode, Color, ColorMode, PixelFormat, SampleType};
 use photocraft_doc::{
-    Adjustment, ClippingPath, Effect, Fill, GlobalLight, Guides, LabelColor, LiveShape, Locks, Path, ShapeStroke, SmartFilter, VectorMask, text,
+    Adjustment, ClippingPath, DrawingAssistants, Effect, Fill, GlobalLight, Guides, LabelColor, LiveShape, Locks, Path, ShapeStroke, SmartFilter, VectorMask,
+    text,
 };
 use photocraft_geom::{Affine, Size};
 use serde::{Deserialize, Serialize};
@@ -99,6 +100,9 @@ pub struct DocM {
     /// Web slices (user and layer-based; layer ids are remapped on load).
     #[serde(default, skip_serializing_if = "photocraft_doc::Slices::is_empty")]
     pub slices: photocraft_doc::Slices,
+    /// Drawing assistants (stroke-snapping guides); absent in older bundles.
+    #[serde(default)]
+    pub assistants: DrawingAssistants,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -635,6 +635,26 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
         }
         _ => {}
     }
+    // Drawing assistants constrain every stroke-based retouching tool, like the painting tools
+    // (region tools — Patch, Content-Aware Move, Remove, Red Eye — have no stroke to snap).
+    if matches!(
+        tool,
+        Tool::SpotHealing
+            | Tool::Healing
+            | Tool::CloneStamp
+            | Tool::PatternStamp
+            | Tool::HistoryBrush
+            | Tool::Dodge
+            | Tool::Burn
+            | Tool::Sponge
+            | Tool::Blur
+            | Tool::Sharpen
+            | Tool::Smudge
+            | Tool::ColorReplacement
+    ) {
+        crate::widgets::vline(ui, 22.0);
+        crate::assistants_ui::menu(app, ui);
+    }
     true
 }
 

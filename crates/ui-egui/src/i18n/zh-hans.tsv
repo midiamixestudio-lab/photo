@@ -326,6 +326,7 @@
 	New Video Layer from File…	从文件新建视频图层…
 	Duplicate Layer…	复制图层…
 	Delete Layer	删除图层
+	Delete this assistant	删除此助手
 	Delete	删除
 	Rename Layer	重命名图层
 	Create Layer	创建图层
@@ -703,6 +704,7 @@
 	Rulers	标尺
 	Snap	吸附
 	Snap To	吸附到
+	Snap to Assistants	吸附到助手
 	Lock Guides	锁定参考线
 	Clear Guides	清除参考线
 	Clear Selected Artboard Guides	清除所选画板的参考线
@@ -1101,6 +1103,8 @@
 	Or set Preferences › Performance › Linux display server to X11: PhotoCraft then always starts under XWayland.	或将 首选项 › 性能 › Linux 显示服务器 设为 X11：PhotoCraft 将始终在 XWayland 下启动。
 	Edit › Paste	“编辑 › 粘贴”
 	Duplicate Layers…	复制图层…
+	Drawing Assistants	绘画助手
+	Drawing assistants: snap strokes to guides	绘画助手：将描边吸附到参考线
 	Duplicate style	复制样式
 	Edit Toolbar…	编辑工具栏…
 	Use File › Open, or paste a copied image with {paste}.	请使用“文件 › 打开”，或使用 {paste} 粘贴复制的图像。
@@ -1523,6 +1527,7 @@
 	Star ratio	星形比例
 	Stop playing/recording	停止播放/录制
 	Straighten	拉直
+	Straight Line	直线
 	Straighten Layer	拉直图层
 	Strength:	强度：
 	Strikethrough	删除线
@@ -2111,6 +2116,7 @@
 	Highlight Clipping Warning (O)	高光剪切警告 (O)
 	Show Lab Color Readouts	显示 Lab 颜色读数
 	Show Vectorscope	显示矢量示波器
+	Show/hide this assistant	显示/隐藏此助手
 	Show Red at 3 o'clock	将红色显示在三点钟方向
 	Show Skin Tone Indicator	显示肤色指示线
 	Tone Histogram	色调直方图
@@ -2315,6 +2321,7 @@ cameraRaw	Blending	混合
 	Save failed: {error}	存储失败：{error}
 	Save cancelled	已取消存储
 	Magnetic Lasso Tool	磁性套索工具
+	Magnetism	磁性
 	Frequency	频率
 	Use tablet pressure to change pen width	使用绘图板压力以更改钢笔宽度
 
