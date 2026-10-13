@@ -681,6 +681,14 @@ fn build() -> Vec<CommandSpec> {
             has_layer,
             |s, p| {
                 let id = layer_param(s, p)?;
+                // Opacity is 0..1 here (the layerStyle.* commands take 0..100); an
+                // out-of-range value is a scripting mistake on the wrong scale, so
+                // reject it instead of clamping it into a plausible-looking result.
+                if let Some(v) = p.get("opacity").and_then(Value::as_f64) {
+                    if !(0.0..=1.0).contains(&v) {
+                        return Err(bad("layer.setProps", format!("opacity must be 0..1, got {v}")));
+                    }
+                }
                 let only_visibility =
                     p.as_object().is_some_and(|o| o.contains_key("visible") && o.keys().all(|k| matches!(k.as_str(), "layer" | "visible" | "coalesce")));
                 let label = if only_visibility { "Layer Visibility" } else { "Layer Properties" };
