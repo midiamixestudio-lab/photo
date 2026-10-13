@@ -1,5 +1,5 @@
 //! Photoshop-style Tab in dialogs: Tab and ⇧Tab cycle a dialog's text and number fields only
-//! (Name → Width → Height → Resolution in New Document, Hue → Saturation → Lightness in
+//! (Search → Name → Width → Height → Resolution in New Document, Hue → Saturation → Lightness in
 //! Hue/Saturation), never its sliders, dropdowns, checkboxes or buttons, and a field reached this
 //! way has its text selected so typing replaces it.
 //!
@@ -181,13 +181,14 @@ mod tests {
         assert!(h.state().ui.dialogs.len() == 1, "Tab never closed the dialog");
     }
 
-    /// New Document opens with the name selected; Tab goes Width → Height → Resolution and wraps.
+    /// New Document opens with the name selected; Tab goes Width → Height → Resolution → Search.
     #[test]
     fn new_document_opens_on_the_name_and_tabs_to_width_then_height() {
         let mut h = harness(PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default()));
         h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
+        h.state_mut().ui.dialogs[0].fields.insert("__advanced".into(), serde_json::json!(true));
         h.run_steps(3);
-        assert!(h.get_by_role(Role::TextInput).is_focused(), "the name field has focus");
+        assert!(h.get_by_role_and_label(Role::TextInput, "Name").is_focused(), "the name field has focus");
         type_text(&mut h, "Poster");
         assert_eq!(fields(&h)["name"], "Poster", "typing replaced the selected name");
         tab(&mut h);
@@ -203,16 +204,40 @@ mod tests {
         h.run_steps(2);
         arrow(&mut h, egui::Key::ArrowUp, egui::Modifiers::SHIFT);
         assert_eq!(fields(&h)["height"].as_u64(), Some(310));
-        // Tab from the last field wraps to the name.
+        // Search also belongs to the field cycle.
         tab(&mut h);
         tab(&mut h);
-        assert!(h.get_by_role(Role::TextInput).is_focused(), "Tab wrapped to the name");
+        assert!(h.get_by_role_and_label(Role::TextInput, "Search formats").is_focused());
+        tab(&mut h);
+        assert!(h.get_by_role_and_label(Role::TextInput, "Name").is_focused(), "Tab wrapped to the name");
         type_text(&mut h, "Flyer");
         assert_eq!(fields(&h)["name"], "Flyer");
         h.key_press(egui::Key::Enter);
         h.run_steps(3);
         let d = &h.state().session.active().expect("a new document").doc;
         assert_eq!((d.name.as_str(), d.size.width, d.size.height), ("Flyer", 512, 310));
+    }
+
+    #[test]
+    fn new_document_tab_reaches_search_with_advanced_fields_hidden() {
+        let mut h = harness(PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default()));
+        h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
+        h.run_steps(3);
+        assert!(h.get_by_role_and_label(Role::TextInput, "Name").is_focused());
+        tab(&mut h);
+        tab(&mut h);
+        tab(&mut h);
+        assert!(h.get_by_role_and_label(Role::TextInput, "Search formats").is_focused());
+        type_text(&mut h, "4:5");
+        tab(&mut h);
+        assert!(h.get_by_role_and_label(Role::TextInput, "Name").is_focused());
+        h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Tab);
+        h.run_steps(2);
+        assert!(h.get_by_role_and_label(Role::TextInput, "Search formats").is_focused());
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!((fields(&h)["width"].as_u64(), fields(&h)["height"].as_u64()), (Some(1080), Some(1350)));
+        assert!(h.state().session.active().is_none(), "search Enter must not create a document");
     }
 
     /// Tab is the dialog's: the modal underneath never sees it, and a dialog with no fields swallows it.

@@ -1303,6 +1303,21 @@
 	Override Pressure	필압 재정의
 	Override Rotation	회전 재정의
 	Override Tilt	기울기 재정의
+# Searchable New Document formats.
+	Popular	인기
+	Social Media	소셜 미디어
+	Search formats	형식 검색
+	Name, size or aspect ratio	이름, 크기 또는 종횡비
+	No matching formats.	일치하는 형식이 없습니다.
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Instagram 게시물, 3:4
+	Instagram post, 4:5	Instagram 게시물, 4:5
+	Square post	정사각형 게시물
+	Landscape post	가로 게시물
+	YouTube thumbnail, 4K	YouTube 썸네일, 4K
+	Shorts thumbnail, 4K	Shorts 썸네일, 4K
+	Video thumbnail, HD	동영상 썸네일, HD
+
 	PRESET DETAILS	사전 설정 세부 정보
 	PSD	PSD
 	Paint Overlay	오버레이 칠하기

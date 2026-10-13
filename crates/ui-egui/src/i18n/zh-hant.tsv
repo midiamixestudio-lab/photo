@@ -1338,6 +1338,21 @@
 	Override Pressure	覆寫壓力
 	Override Rotation	覆寫旋轉
 	Override Tilt	覆寫傾斜
+# Searchable New Document formats.
+	Popular	熱門
+	Social Media	社群媒體
+	Search formats	搜尋格式
+	Name, size or aspect ratio	名稱、尺寸或長寬比
+	No matching formats.	沒有符合的格式。
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Instagram 貼文, 3:4
+	Instagram post, 4:5	Instagram 貼文, 4:5
+	Square post	方形貼文
+	Landscape post	橫式貼文
+	YouTube thumbnail, 4K	YouTube 縮圖，4K
+	Shorts thumbnail, 4K	Shorts 縮圖，4K
+	Video thumbnail, HD	影片縮圖，HD
+
 	PRESET DETAILS	預設集詳細資料
 	PSD	PSD
 	Paint Overlay	繪畫覆蓋

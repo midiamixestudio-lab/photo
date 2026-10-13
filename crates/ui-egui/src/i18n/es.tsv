@@ -1332,6 +1332,21 @@
 	Override Pressure	Anular presión
 	Override Rotation	Anular rotación
 	Override Tilt	Anular inclinación
+# Searchable New Document formats.
+	Popular	Populares
+	Social Media	Redes sociales
+	Search formats	Buscar formatos
+	Name, size or aspect ratio	Nombre, tamaño o proporción
+	No matching formats.	No se encontraron formatos.
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Publicación Instagram, 3:4
+	Instagram post, 4:5	Publicación Instagram, 4:5
+	Square post	Publicación cuadrada
+	Landscape post	Publicación horizontal
+	YouTube thumbnail, 4K	Miniatura YouTube, 4K
+	Shorts thumbnail, 4K	Miniatura Shorts, 4K
+	Video thumbnail, HD	Miniatura de vídeo, HD
+
 	PRESET DETAILS	DETALLES DEL AJUSTE PREESTABLECIDO
 	PSD	PSD
 	Paint Overlay	Superposición de pintura

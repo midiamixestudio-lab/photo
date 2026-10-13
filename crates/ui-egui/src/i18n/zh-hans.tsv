@@ -1341,6 +1341,21 @@
 	Override Pressure	覆盖压感
 	Override Rotation	覆盖旋转
 	Override Tilt	覆盖倾斜
+# Searchable New Document formats.
+	Popular	热门
+	Social Media	社交媒体
+	Search formats	搜索格式
+	Name, size or aspect ratio	名称、尺寸或纵横比
+	No matching formats.	没有匹配的格式。
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Instagram 帖子, 3:4
+	Instagram post, 4:5	Instagram 帖子, 4:5
+	Square post	方形帖子
+	Landscape post	横版帖子
+	YouTube thumbnail, 4K	YouTube 缩略图，4K
+	Shorts thumbnail, 4K	Shorts 缩略图，4K
+	Video thumbnail, HD	视频缩略图，HD
+
 	PRESET DETAILS	预设详细信息
 	PSD	PSD
 	Paint Overlay	绘制叠加层

@@ -1732,6 +1732,21 @@ cameraRaw	Size	Kích thước
 	Drop an image or PSD anywhere to open it.	Thả hình ảnh hoặc tệp PSD vào đây để mở.
 	Use File › Open to open an image.	Dùng Tệp › Mở để mở hình ảnh.
 	BLANK DOCUMENT PRESETS ({n})	Thiết lập sẵn tài liệu trống ({n})
+# Searchable New Document formats.
+	Popular	Phổ biến
+	Social Media	Mạng xã hội
+	Search formats	Tìm định dạng
+	Name, size or aspect ratio	Tên, kích thước hoặc tỷ lệ khung hình
+	No matching formats.	Không có định dạng phù hợp.
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Bài đăng Instagram, 3:4
+	Instagram post, 4:5	Bài đăng Instagram, 4:5
+	Square post	Bài đăng vuông
+	Landscape post	Bài đăng ngang
+	YouTube thumbnail, 4K	Ảnh thu nhỏ YouTube, 4K
+	Shorts thumbnail, 4K	Ảnh thu nhỏ Shorts, 4K
+	Video thumbnail, HD	Ảnh thu nhỏ video, HD
+
 	PRESET DETAILS	Chi tiết thiết lập sẵn
 	Untitled-1	Chưa đặt tên-1
 	Untitled	Chưa đặt tên

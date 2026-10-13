@@ -1500,6 +1500,21 @@
 	Close Tab Group	Закрыть группу вкладок
 
 # New Document dialog
+# Searchable New Document formats.
+	Popular	Популярные
+	Social Media	Социальные сети
+	Search formats	Поиск форматов
+	Name, size or aspect ratio	Название, размер или пропорции
+	No matching formats.	Подходящие форматы не найдены.
+	Stories / Reels / Shorts	Stories / Reels / Shorts
+	Instagram post, 3:4	Пост Instagram, 3:4
+	Instagram post, 4:5	Пост Instagram, 4:5
+	Square post	Квадратный пост
+	Landscape post	Горизонтальный пост
+	YouTube thumbnail, 4K	Обложка YouTube, 4K
+	Shorts thumbnail, 4K	Обложка Shorts, 4K
+	Video thumbnail, HD	Обложка видео, HD
+
 	PRESET DETAILS	ПАРАМЕТРЫ НАБОРА
 	BLANK DOCUMENT PRESETS ({n})	НАБОРЫ ПУСТЫХ ДОКУМЕНТОВ ({n})
 	Create a new document or open an existing file.	Создайте новый документ или откройте существующий файл.

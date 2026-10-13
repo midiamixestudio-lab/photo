@@ -1,5 +1,4 @@
-//! File › New: Photoshop's New Document dialog. Category tabs with blank-document presets on the
-//! left, Preset Details on the right. Values live in the dialog fields (`width`/`height` in pixels,
+//! File › New: searchable formats and an editable canvas preview. Values live in the dialog fields (`width`/`height` in pixels,
 //! `resolution` in ppi, `mode`, `depth`, `background`, `name`), so `ui.dialog.set` drives it and
 //! Create runs `file.new` with them.
 
@@ -12,71 +11,7 @@ use crate::theme::Tokens;
 use crate::{icons, widgets};
 use photocraft_engine::document_preset_cmds::DocumentSettings;
 
-/// A blank-document preset: (name, width px, height px, ppi).
-pub type Preset = (&'static str, u32, u32, f32);
-
-/// Photoshop's New Document categories and their blank-document presets.
-pub const CATEGORIES: &[(&str, &[Preset])] = &[
-    ("Recent", &[("Default PhotoCraft Size", 2100, 1500, 300.0), ("HDTV 1080p", 1920, 1080, 72.0)]),
-    (
-        "Photo",
-        &[
-            ("Landscape, 6 x 4", 1800, 1200, 300.0),
-            ("Landscape, 7 x 5", 2100, 1500, 300.0),
-            ("Landscape, 10 x 8", 3000, 2400, 300.0),
-            ("Portrait, 4 x 6", 1200, 1800, 300.0),
-            ("Portrait, 5 x 7", 1500, 2100, 300.0),
-            ("Square, 5 x 5", 1500, 1500, 300.0),
-        ],
-    ),
-    (
-        "Print",
-        &[
-            ("Letter", 2550, 3300, 300.0),
-            ("Legal", 2550, 4200, 300.0),
-            ("Tabloid", 3300, 5100, 300.0),
-            ("A4", 2480, 3508, 300.0),
-            ("A3", 3508, 4961, 300.0),
-            ("A5", 1748, 2480, 300.0),
-            ("B3", 4169, 5906, 300.0),
-            ("B4", 2953, 4169, 300.0),
-        ],
-    ),
-    (
-        "Art & Illustration",
-        &[("Poster", 5400, 7200, 300.0), ("Postcard", 1800, 1200, 300.0), ("Comic Book", 1988, 3075, 300.0), ("Square, 12 x 12", 3600, 3600, 300.0)],
-    ),
-    (
-        "Web",
-        &[
-            ("Web Most Common", 1366, 768, 72.0),
-            ("Web Minimum", 1024, 768, 72.0),
-            ("Web Large", 1920, 1080, 72.0),
-            ("MacBook Pro 16\"", 3456, 2234, 72.0),
-            ("iMac 24\"", 4480, 2520, 72.0),
-        ],
-    ),
-    (
-        "Mobile",
-        &[
-            ("iPhone 16", 1179, 2556, 72.0),
-            ("iPhone 16 Pro Max", 1320, 2868, 72.0),
-            ("iPad Pro 13\"", 2064, 2752, 72.0),
-            ("Android 1080p", 1080, 1920, 72.0),
-            ("Apple Watch 45mm", 396, 484, 72.0),
-        ],
-    ),
-    (
-        "Film & Video",
-        &[
-            ("HDTV 1080p", 1920, 1080, 72.0),
-            ("HDTV 720p", 1280, 720, 72.0),
-            ("UHD 4K", 3840, 2160, 72.0),
-            ("DCI 4K", 4096, 2160, 72.0),
-            ("UHD 8K", 7680, 4320, 72.0),
-        ],
-    ),
-];
+pub use crate::new_doc_catalog::{CATEGORIES, Preset};
 
 const DEPTH_OPTIONS: &[(u64, &str, &str)] = &[(8, "8 bit", "Integer"), (16, "16 bit", "Integer"), (32, "32 bit (float)", "Floating point")];
 
@@ -280,9 +215,9 @@ fn card_title(painter: &egui::Painter, title: &str, width: f32, color: egui::Col
 
 /// Paint a page thumbnail with the preset's aspect ratio.
 fn page_icon(ui: &egui::Ui, r: Rect, w: u32, h: u32, t: &Tokens) {
-    let s = 30.0 / (w.max(h) as f32);
+    let s = ((r.width() - 8.0) / w.max(1) as f32).min((r.height() - 8.0) / h.max(1) as f32);
     let page = Rect::from_center_size(r.center(), vec2(w as f32 * s, h as f32 * s));
-    ui.painter().rect_stroke(page, 1.0, Stroke::new(1.2, t.text_dim), StrokeKind::Inside);
+    ui.painter().rect_stroke(page, t.radius_sm, Stroke::new(1.2, t.text_dim), StrokeKind::Inside);
 }
 
 /// The Background Contents menu's entry for a colour of the user's own ([`body`]).
@@ -400,7 +335,7 @@ impl Card {
 fn recent_cards(f: &Map<String, Value>, recent: &[DocumentSettings], units: &UnitsAndRulers) -> Vec<Card> {
     let mut cards: Vec<Card> = clipboard_preset(f).map(Card::Builtin).into_iter().collect();
     cards.extend(recent.iter().cloned().map(Card::Recent));
-    let defaults = CATEGORIES[0].1.iter().filter(|p| {
+    let defaults = CATEGORIES.iter().find(|c| c.0 == "Recent").into_iter().flat_map(|c| c.1.iter()).filter(|p| {
         let (_, w, h, ppi) = at_pref_resolutions(p, units);
         !recent.iter().any(|s| (s.width, s.height, s.resolution) == (w, h, ppi))
     });
@@ -409,9 +344,10 @@ fn recent_cards(f: &Map<String, Value>, recent: &[DocumentSettings], units: &Uni
 }
 
 fn saved_presets(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) -> bool {
-    let presets = app.session.presets.documents.clone();
+    let query = get_s(f, "__search", "").to_lowercase();
+    let presets: Vec<_> = app.session.presets.documents.iter().filter(|p| p.name.to_lowercase().contains(query.trim())).cloned().collect();
     if presets.is_empty() {
-        ui.label(tl!("No saved presets yet."));
+        ui.label(if app.session.presets.documents.is_empty() { tl!("No saved presets yet.") } else { tl!("No matching formats.") });
         return false;
     }
     let mut create = false;
@@ -421,7 +357,7 @@ fn saved_presets(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<
                 ui.horizontal(|ui| {
                     let selected = get_s(f, "__savedPreset", "") == preset.name;
                     let label = egui::Button::new(&preset.name).selected(selected).truncate();
-                    let response = ui.add_sized(vec2(422.0, 32.0), label).on_hover_text(&preset.name);
+                    let response = ui.add_sized(vec2((ui.available_width() - 84.0).max(80.0), 32.0), label).on_hover_text(&preset.name);
                     if response.clicked() {
                         apply_saved_preset(f, preset);
                         create |= response.double_clicked() || response.triple_clicked();
@@ -471,6 +407,7 @@ fn save_preset(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<St
                             apply_saved_preset(f, preset);
                         }
                         f.insert("__category".into(), json!("Saved"));
+                        f.insert("__search".into(), json!(""));
                         f.remove("__savingPreset");
                         f.remove("__presetName");
                         f.remove("__presetError");
@@ -492,281 +429,432 @@ fn save_preset(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<St
     }
 }
 
-/// Returns whether a preset double-click requested creation, after applying its settings.
-/// A recent category click can make egui count the preset double-click as a triple-click.
+/// Keep the modal within the viewport, including its frame and fixed footer.
+pub fn dialog_width(ctx: &egui::Context) -> f32 {
+    (ctx.content_rect().width() - 48.0).clamp(280.0, 960.0)
+}
+
+/// Keep the listed preset as the application input, while searching its actual dimensions at
+/// the preference resolutions. Applying an already-scaled print preset would scale it twice.
+fn resolved_catalog(category: &str, query: &str, units: &UnitsAndRulers) -> Vec<Preset> {
+    let category = if query.trim().is_empty() { category } else { "All" };
+    let lang = crate::i18n::current();
+    crate::new_doc_catalog::formats(category, "", lang)
+        .into_iter()
+        .filter(|p| crate::new_doc_catalog::matches(&at_pref_resolutions(p, units), query, lang))
+        .collect()
+}
+
+fn resolved_cards(f: &Map<String, Value>, category: &str, query: &str, recent: &[DocumentSettings], units: &UnitsAndRulers) -> Vec<Card> {
+    let lang = crate::i18n::current();
+    if category == "Recent" {
+        return recent_cards(f, recent, units)
+            .into_iter()
+            .map(|c| match c {
+                Card::Builtin(p) => Card::Builtin(oriented(&p, f)),
+                recent => recent,
+            })
+            .filter(|c| {
+                let (w, h, ppi) = c.size(units);
+                crate::new_doc_catalog::matches(&(c.title(), w, h, ppi), query, lang)
+            })
+            .collect();
+    }
+    let mut cards: Vec<Card> = resolved_catalog(if query.trim().is_empty() { category } else { "All" }, "", units)
+        .into_iter()
+        .map(|p| oriented(&p, f))
+        .filter(|p| crate::new_doc_catalog::matches(&at_pref_resolutions(p, units), query, lang))
+        .map(Card::Builtin)
+        .collect();
+    if let Some(p) = clipboard_preset(f)
+        .filter(|p| (category == "Popular" || category == "All" || !query.trim().is_empty()) && crate::new_doc_catalog::matches(p, query, lang))
+    {
+        cards.insert(0, Card::Builtin(p));
+    }
+    cards
+}
+
+fn apply_card(f: &mut Map<String, Value>, card: &Card, units: &UnitsAndRulers) {
+    match card {
+        Card::Builtin(p) => apply_preset(f, p, units),
+        Card::Recent(settings) => apply_settings(f, settings),
+    }
+}
+
 pub fn body(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) -> bool {
     let t = Tokens::get(ui.ctx());
-    let cat = get_s(f, "__category", "Recent");
-    let mut create = false;
-    // Category tabs.
+    let label = ui.label(RichText::new(tl!("Search formats")).color(t.text_dim));
+    let search_id = ui.make_persistent_id("new-document-search");
+    // Enter in search selects a result. It must never also confirm the outer modal.
+    let enter = ui.memory(|m| m.has_focus(search_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+    let mut query = get_s(f, "__search", "");
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 18.0;
-        for name in CATEGORIES.iter().map(|c| c.0).chain(["Saved"]) {
-            let on = cat == name;
-            let label = if name == "Saved" { tl!("Saved") } else { tl!(name) };
-            let r = ui
-                .add(egui::Label::new(RichText::new(label).size(13.0).color(if on { t.text } else { t.text_dim })).selectable(false).sense(Sense::click()))
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            if on {
-                ui.painter().line_segment([r.rect.left_bottom() + vec2(0.0, 3.0), r.rect.right_bottom() + vec2(0.0, 3.0)], Stroke::new(2.0, t.text));
-            }
-            if r.clicked() {
+        let width = (ui.available_width() - 80.0).max(100.0);
+        let response = ui
+            .add(egui::TextEdit::singleline(&mut query).id(search_id).desired_width(width).char_limit(128).hint_text(tl!("Name, size or aspect ratio")))
+            .labelled_by(label.id);
+        crate::field_tab::register(ui.ctx(), response.id);
+        if response.gained_focus() {
+            crate::field_tab::select_all(ui.ctx(), response.id, &query);
+        }
+        if widgets::secondary_button(ui, tl!("Clear"), 64.0).clicked() {
+            query.clear();
+        }
+    });
+    f.insert("__search".into(), json!(query));
+    ui.add_space(8.0);
+    let mut category = get_s(f, "__category", "Popular");
+    ui.horizontal_wrapped(|ui| {
+        for name in ["Popular", "Recent", "Social Media", "All", "Photo", "Print", "Art & Illustration", "Web", "Mobile", "Film & Video", "Saved"] {
+            if ui
+                .selectable_label(category == name, RichText::new(tl!(name)).color(if category == name { t.accent_text } else { t.text }))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                category = name.to_owned();
                 f.insert("__category".into(), json!(name));
+                f.insert("__search".into(), json!(""));
+                query.clear();
             }
         }
     });
-    ui.add_space(6.0);
-    widgets::hairline(ui);
-    ui.add_space(8.0);
+    ui.add_space(10.0);
     let units = app.session.prefs().units_and_rulers.clone();
-    let presets: Vec<Card> = match CATEGORIES.iter().find(|c| c.0 == cat) {
-        Some(c) if c.0 != CATEGORIES[0].0 => c.1.iter().copied().map(Card::Builtin).collect(),
-        _ => recent_cards(f, &app.session.presets.recent_documents, &units),
-    };
-    let presets: Vec<Card> = presets
-        .into_iter()
-        .map(|c| match c {
-            Card::Builtin(p) => Card::Builtin(oriented(&p, f)),
-            recent => recent,
-        })
-        .collect();
+    let cards = resolved_cards(f, &category, &query, &app.session.presets.recent_documents, &units);
+    if enter {
+        if category == "Saved" {
+            if let Some(p) = app.session.presets.documents.iter().find(|p| p.name.to_lowercase().contains(query.to_lowercase().trim())).cloned() {
+                apply_saved_preset(f, &p);
+            }
+        } else if let Some(card) = cards.first() {
+            apply_card(f, card, &units);
+        }
+        ui.memory_mut(|m| m.surrender_focus(search_id));
+    }
+    let mut create = false;
+    let total = ui.available_width();
+    if total >= 760.0 {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 20.0;
+            ui.vertical(|ui| {
+                ui.set_width(total - 308.0);
+                create |= catalog(app, ui, f, &category, &cards);
+            });
+            ui.vertical(|ui| {
+                ui.set_width(288.0);
+                details(app, ui, f);
+            });
+        });
+    } else {
+        create |= catalog(app, ui, f, &category, &cards);
+        ui.add_space(12.0);
+        details(app, ui, f);
+    }
+    create
+}
+
+fn catalog(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>, category: &str, cards: &[Card]) -> bool {
+    if category == "Saved" {
+        return saved_presets(app, ui, f);
+    }
+    let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(crate::i18n::fmt(tl!("BLANK DOCUMENT PRESETS ({n})"), &[("n", &cards.len().to_string())])).size(11.0).color(t.text_faint));
+    ui.add_space(8.0);
+    if cards.is_empty() {
+        ui.label(tl!("No matching formats."));
+    }
+    let columns = ((ui.available_width() + 10.0) / 174.0).floor().clamp(1.0, 3.0) as usize;
+    let card = vec2((ui.available_width() - 10.0 * (columns.saturating_sub(1)) as f32) / columns as f32, 146.0);
     let chosen = get_s(f, "__preset", "");
-    ui.horizontal_top(|ui| {
-        // Left: preset grid.
-        ui.vertical(|ui| {
-            ui.set_width(520.0);
-            if cat == "Saved" {
-                create |= saved_presets(app, ui, f);
-                return;
-            }
-            ui.label(RichText::new(crate::i18n::fmt(tl!("BLANK DOCUMENT PRESETS ({n})"), &[("n", &presets.len().to_string())])).size(11.0).color(t.text_faint));
-            ui.add_space(6.0);
-            let card = vec2(164.0, 112.0);
-            // Up to 20 recent documents: scroll past three rows rather than grow the dialog.
-            egui::ScrollArea::vertical().id_salt("new-document-presets").max_height(3.0 * (card.y + 8.0)).show(ui, |ui| {
-                for row in presets.chunks(3) {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        for c in row {
-                            let (r, resp) = ui.allocate_exact_size(card, Sense::click());
-                            let (w, h, _) = c.size(&units);
-                            let on = match c {
-                                Card::Builtin(p) => chosen == p.0,
-                                Card::Recent(settings) => holds(f, settings),
-                            };
-                            ui.painter().rect_filled(
-                                r,
-                                t.radius,
-                                if on {
-                                    t.row_selected
-                                } else if resp.hovered() {
-                                    t.hover
-                                } else {
-                                    t.field
-                                },
-                            );
-                            if on {
-                                ui.painter().rect_stroke(r, t.radius, Stroke::new(1.5, t.accent), StrokeKind::Inside);
-                            }
-                            page_icon(ui, Rect::from_center_size(pos2(r.center().x, r.top() + 34.0), vec2(40.0, 40.0)), w, h, &t);
-                            let title = card_title(ui.painter(), tl!(c.title()), card.x - 12.0, t.text);
-                            let elided = title.elided;
-                            ui.painter().galley(pos2(r.center().x, r.top() + 70.0 - title.size().y / 2.0), title, t.text);
-                            let size = c.size_line(&units, f);
-                            ui.painter().text(pos2(r.center().x, r.top() + 97.0), Align2::CENTER_CENTER, &size, egui::FontId::proportional(10.5), t.text_faint);
-                            let resp = match c {
-                                // A recent document's tooltip names everything it restores.
-                                Card::Recent(s) => {
-                                    let background = match s.background.as_str() {
-                                        "white" => tl!("White"),
-                                        "black" => tl!("Black"),
-                                        "transparent" => tl!("Transparent"),
-                                        "backgroundColor" => tl!("Background Color"),
-                                        hex => hex,
-                                    };
-                                    resp.on_hover_text(format!("{} · {size} · {}/{} · {background}", tl!(c.title()), s.mode.to_uppercase(), s.depth))
-                                }
-                                Card::Builtin(_) if elided => resp.on_hover_text(tl!(c.title())),
-                                Card::Builtin(_) => resp,
-                            };
-                            if resp.clicked() {
-                                match c {
-                                    Card::Builtin(p) => apply_preset(f, p, &units),
-                                    Card::Recent(settings) => apply_settings(f, settings),
-                                }
-                                create |= resp.double_clicked() || resp.triple_clicked();
-                            }
-                        }
-                    });
-                    ui.add_space(8.0);
-                }
-            });
-        });
-        ui.add_space(10.0);
-        // Right: Preset Details.
-        ui.vertical(|ui| {
-            ui.set_width(260.0);
-            ui.label(RichText::new(tl!("PRESET DETAILS")).size(11.0).color(t.text_faint));
-            ui.add_space(4.0);
-            // Keep the canonical English default in state; only the TextEdit shows a translation.
-            let raw = get_s(f, "name", "Untitled-1");
-            let mut name = if raw == "Untitled-1" { tl!("Untitled-1").to_string() } else { raw };
-            let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(250.0).font(egui::FontId::proportional(15.0)));
-            if r.changed() {
-                f.insert("name".into(), json!(name));
-            }
-            crate::field_tab::register(ui.ctx(), r.id);
-            // Photoshop opens the dialog with the name selected, so typing replaces it and Tab goes
-            // straight on to Width. (`__focused` marks that this instance has had its turn.)
-            if !f.contains_key("__focused") {
-                f.insert("__focused".into(), json!(true));
-                crate::field_tab::focus(ui.ctx(), r.id);
-            }
-            if r.gained_focus() {
-                crate::field_tab::select_all(ui.ctx(), r.id, &name);
-            }
-            ui.add_space(8.0);
-            let ppi = get_f(f, "resolution", 72.0);
-            let mut unit = get_s(f, "__unit", "px");
-            // A typed unit (`210mm` while in pixels) converts at the new document's resolution.
-            let units = widgets::FieldUnits { unit: widgets::unit_of_key(&unit), dpi: f64::from(ppi), ppi: 72.0 };
-            small_label(ui, tl!("Width"));
+    let units = app.session.prefs().units_and_rulers.clone();
+    let mut create = false;
+    egui::ScrollArea::vertical().id_salt("new-document-formats").max_height(330.0).auto_shrink([false, true]).show(ui, |ui| {
+        for row in cards.chunks(columns) {
             ui.horizontal(|ui| {
-                let mut w = shown_size(f, "width", 1920.0, &unit, ppi);
-                if widgets::value_field_units(ui, &mut w, 0.01..=300_000.0, 110.0, widgets::unit_decimals(&unit), units).changed() {
-                    set_size(f, "width", w, &unit, ppi);
-                }
-                let opts: Vec<(String, &str)> = UNITS.iter().map(|u| (u.0.to_string(), u.1)).collect();
-                if widgets::dropdown(ui, "nd-unit", &mut unit, &opts, 120.0) {
-                    f.insert("__unit".into(), json!(unit));
-                    f.remove("__savedPreset");
-                }
-            });
-            small_label(ui, tl!("Height"));
-            ui.horizontal(|ui| {
-                let mut h = shown_size(f, "height", 1080.0, &unit, ppi);
-                if widgets::value_field_units(ui, &mut h, 0.01..=300_000.0, 110.0, widgets::unit_decimals(&unit), units).changed() {
-                    set_size(f, "height", h, &unit, ppi);
-                }
-                ui.add_space(6.0);
-                // Page orientation (≠ Type › Orientation → Hướng chữ).
-                small_label(ui, crate::i18n::tr_ctx(crate::i18n::current(), "document", "Orientation"));
-                let (w, h) = (get_f(f, "width", 1920.0), get_f(f, "height", 1080.0));
-                for (icon, portrait) in [("rectangle-vertical", true), ("rectangle-horizontal", false)] {
-                    // Tooltip strings are looked up via `icons::button` → `tl!`; enum/state is aspect swap only.
-                    if icons::button(ui, icon, 24.0, (h > w) == portrait, if portrait { "Portrait" } else { "Landscape" }).clicked() {
-                        // The pick also turns the presets (`oriented`), even when the size already has it.
-                        f.insert("__orientation".into(), json!(if portrait { "portrait" } else { "landscape" }));
-                        if (h > w) != portrait {
-                            swap_size(f);
-                        }
-                    }
-                }
-            });
-            ui.add_space(4.0);
-            small_label(ui, tl!("Resolution"));
-            ui.horizontal(|ui| {
-                let per_cm = get_s(f, "__resUnit", "in") == "cm";
-                let mut r = if per_cm { ppi / 2.54 } else { ppi };
-                if widgets::value_field(ui, &mut r, 1.0..=30_000.0, "", 110.0).changed() {
-                    set_resolution(f, if per_cm { r * 2.54 } else { r });
-                }
-                let mut ru = get_s(f, "__resUnit", "in");
-                if widgets::dropdown(ui, "nd-resunit", &mut ru, &[("in".to_string(), tl!("Pixels/Inch")), ("cm".to_string(), tl!("Pixels/Centimeter"))], 120.0)
-                {
-                    f.insert("__resUnit".into(), json!(ru));
-                    f.remove("__savedPreset");
-                }
-            });
-            ui.add_space(4.0);
-            small_label(ui, tl!("Color Mode"));
-            ui.horizontal(|ui| {
-                let mut mode = get_s(f, "mode", "rgb");
-                if widgets::dropdown(
-                    ui,
-                    "nd-mode",
-                    &mut mode,
-                    &[
-                        ("gray".to_string(), tl!("Grayscale")),
-                        ("rgb".to_string(), tl!("RGB Color")),
-                        ("cmyk".to_string(), tl!("CMYK Color")),
-                        ("lab".to_string(), tl!("Lab Color")),
-                    ],
-                    110.0,
-                ) {
-                    f.insert("mode".into(), json!(mode));
-                    f.remove("__savedPreset");
-                }
-                let mut depth = f.get("depth").and_then(Value::as_u64).unwrap_or(8);
-                let depth_options: Vec<(u64, &str, &str)> = DEPTH_OPTIONS.iter().map(|(bits, label, tooltip)| (*bits, *label, *tooltip)).collect();
-                if widgets::dropdown_with_tooltips(ui, "nd-depth", &mut depth, &depth_options, 120.0) {
-                    f.insert("depth".into(), json!(depth));
-                    f.remove("__savedPreset");
-                }
-            });
-            ui.add_space(4.0);
-            small_label(ui, tl!("Background Contents"));
-            // A custom colour is kept as its "#rrggbb", which `file.new` takes as is (#4789).
-            let current = get_s(f, "background", "white");
-            let mut bg = if crate::color_picker_ui::parse_hex(&current).is_some() { CUSTOM.to_string() } else { current.clone() };
-            let opts = [
-                ("white".to_string(), tl!("White")),
-                ("black".to_string(), tl!("Black")),
-                ("backgroundColor".to_string(), tl!("Background Color")),
-                ("transparent".to_string(), tl!("Transparent")),
-                (CUSTOM.to_string(), tl!("Custom…")),
-            ];
-            let shown = background_rgb(app, f);
-            let mut pick = false;
-            ui.horizontal(|ui| {
-                if widgets::dropdown(ui, "nd-bg", &mut bg, &opts, 240.0 - SWATCH - 6.0) {
-                    if bg == CUSTOM {
-                        // Custom… opens the Color Picker on the colour shown so far.
-                        pick = true;
+                ui.spacing_mut().item_spacing.x = 10.0;
+                for c in row {
+                    let (w, h, ppi) = c.size(&units);
+                    let (r, resp) = ui.allocate_exact_size(card, Sense::click());
+                    let on = match c {
+                        Card::Builtin(p) => chosen == p.0,
+                        Card::Recent(settings) => holds(f, settings),
+                    };
+                    let t = if on && t.bevel { Tokens { text: t.accent_text, text_dim: t.accent_text, text_faint: t.accent_text, ..t } } else { t };
+                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), on, tl!(c.title())));
+                    ui.painter().rect_filled(
+                        r,
+                        t.radius,
+                        if on {
+                            t.row_selected
+                        } else if resp.hovered() {
+                            t.hover
+                        } else {
+                            t.field
+                        },
+                    );
+                    ui.painter().rect_stroke(
+                        r,
+                        t.radius,
+                        Stroke::new(if on || resp.has_focus() { 1.5 } else { 1.0 }, if on || resp.has_focus() { t.accent } else { t.field_border }),
+                        StrokeKind::Inside,
+                    );
+                    page_icon(ui, Rect::from_center_size(pos2(r.center().x, r.top() + 34.0), vec2(72.0, 52.0)), w, h, &t);
+                    let title = card_title(ui.painter(), tl!(c.title()), card.x - 16.0, t.text);
+                    ui.painter().galley(pos2(r.center().x, r.top() + 82.0 - title.size().y / 2.0), title, t.text);
+                    ui.painter().text(
+                        pos2(r.center().x, r.top() + 112.0),
+                        Align2::CENTER_CENTER,
+                        format!("{} × {} px", w, h),
+                        crate::theme::mono(11.0),
+                        t.text_dim,
+                    );
+                    let info = if matches!(c, Card::Builtin(p) if is_print(p)) {
+                        c.size_line(&units, f)
                     } else {
-                        f.insert("background".into(), json!(bg));
+                        format!("{} · {} ppi", crate::new_doc_catalog::aspect_ratio(w, h), ppi)
+                    };
+                    ui.painter().text(pos2(r.center().x, r.top() + 132.0), Align2::CENTER_CENTER, info, egui::FontId::proportional(11.0), t.text_faint);
+                    let resp = match c {
+                        Card::Builtin(_) => resp.on_hover_text(tl!(c.title())),
+                        Card::Recent(settings) => {
+                            let background = match settings.background.as_str() {
+                                "white" => tl!("White"),
+                                "black" => tl!("Black"),
+                                "transparent" => tl!("Transparent"),
+                                "backgroundColor" => tl!("Background Color"),
+                                hex => hex,
+                            };
+                            resp.on_hover_text(format!(
+                                "{} · {} · {}/{} · {background}",
+                                tl!(c.title()),
+                                c.size_line(&units, f),
+                                settings.mode.to_uppercase(),
+                                settings.depth
+                            ))
+                        }
+                    };
+                    if resp.clicked() {
+                        apply_card(f, c, &units);
+                        create |= resp.double_clicked() || resp.triple_clicked();
                     }
-                    f.remove("__savedPreset");
-                    // A fresh choice of Background Color uses today's toolbox colour. Selecting a
-                    // saved preset instead restores the colour captured when it was saved.
-                    f.remove("backgroundColor");
-                }
-                // Photoshop's swatch beside the menu: the colour the canvas starts with; a click
-                // opens the Color Picker, as Custom… does.
-                let (r, resp) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
-                match shown {
-                    Some(c) => {
-                        ui.painter().rect_filled(
-                            r,
-                            2.0,
-                            egui::Color32::from_rgb((c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8),
-                        );
-                    }
-                    None => widgets::checker(ui.painter(), r, 4.0),
-                }
-                ui.painter().rect_stroke(r, 2.0, Stroke::new(1.0, Tokens::get(ui.ctx()).field_border), StrokeKind::Inside);
-                let resp = resp.on_hover_text(tl!("Custom background color")).on_hover_cursor(egui::CursorIcon::PointingHand);
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Custom background color")));
-                if resp.clicked() {
-                    pick = true;
-                    f.remove("__savedPreset");
                 }
             });
-            if pick {
-                let start = shown.unwrap_or([1.0; 3]);
-                f.insert("background".into(), json!(crate::color_picker_ui::hex(start)));
-                f.remove("backgroundColor");
-                crate::color_picker_ui::request_field(f, "background", &crate::color_picker_ui::title_for(tl!("Background Contents")));
-            }
-            save_preset(app, ui, f);
-        });
+            ui.add_space(10.0);
+        }
     });
     create
+}
+
+fn preview(ui: &mut egui::Ui, f: &Map<String, Value>) {
+    let t = Tokens::get(ui.ctx());
+    let (w, h) = (get_f(f, "width", 1920.0).clamp(1.0, 300_000.0) as u32, get_f(f, "height", 1080.0).clamp(1.0, 300_000.0) as u32);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 118.0), Sense::hover());
+    ui.painter().rect_filled(r, t.radius, t.field);
+    page_icon(ui, Rect::from_center_size(r.center() - vec2(0.0, 9.0), vec2(132.0, 78.0)), w, h, &t);
+    ui.painter().text(
+        r.center_bottom() - vec2(0.0, 14.0),
+        Align2::CENTER_CENTER,
+        format!("{} × {} px · {}", w, h, crate::new_doc_catalog::aspect_ratio(w, h)),
+        crate::theme::mono(11.0),
+        t.text_dim,
+    );
+    ui.add_space(12.0);
+}
+
+fn details(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) {
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::new().fill(t.card).stroke(Stroke::new(1.0, t.card_border)).corner_radius(t.radius).inner_margin(14.0).show(ui, |ui| {
+        ui.set_min_width(260.0);
+        preview(ui, f);
+        ui.label(RichText::new(tl!("PRESET DETAILS")).size(11.0).color(t.text_faint));
+        ui.add_space(4.0);
+        let name_label = ui.label(tl!("Name"));
+        let raw = get_s(f, "name", "Untitled-1");
+        let mut name = if raw == "Untitled-1" { tl!("Untitled-1").to_string() } else { raw };
+        let response = ui.add(egui::TextEdit::singleline(&mut name).desired_width(250.0).font(egui::FontId::proportional(15.0))).labelled_by(name_label.id);
+        if response.changed() {
+            f.insert("name".into(), json!(name));
+        }
+        crate::field_tab::register(ui.ctx(), response.id);
+        if !f.contains_key("__focused") {
+            f.insert("__focused".into(), json!(true));
+            crate::field_tab::focus(ui.ctx(), response.id);
+        }
+        if response.gained_focus() {
+            crate::field_tab::select_all(ui.ctx(), response.id, &name);
+        }
+        ui.add_space(8.0);
+        let ppi = get_f(f, "resolution", 72.0);
+        let mut unit = get_s(f, "__unit", "px");
+        let units = widgets::FieldUnits { unit: widgets::unit_of_key(&unit), dpi: f64::from(ppi), ppi: 72.0 };
+        small_label(ui, tl!("Width"));
+        ui.horizontal(|ui| {
+            let mut w = shown_size(f, "width", 1920.0, &unit, ppi);
+            if widgets::value_field_units(ui, &mut w, 0.01..=300_000.0, 110.0, widgets::unit_decimals(&unit), units).changed() {
+                set_size(f, "width", w, &unit, ppi);
+            }
+            let opts: Vec<(String, &str)> = UNITS.iter().map(|u| (u.0.to_string(), u.1)).collect();
+            if widgets::dropdown(ui, "nd-unit", &mut unit, &opts, 120.0) {
+                f.insert("__unit".into(), json!(unit));
+                f.remove("__savedPreset");
+            }
+        });
+        small_label(ui, tl!("Height"));
+        ui.horizontal(|ui| {
+            let mut h = shown_size(f, "height", 1080.0, &unit, ppi);
+            if widgets::value_field_units(ui, &mut h, 0.01..=300_000.0, 110.0, widgets::unit_decimals(&unit), units).changed() {
+                set_size(f, "height", h, &unit, ppi);
+            }
+            ui.add_space(6.0);
+            small_label(ui, crate::i18n::tr_ctx(crate::i18n::current(), "document", "Orientation"));
+            let (w, h) = (get_f(f, "width", 1920.0), get_f(f, "height", 1080.0));
+            for (icon, portrait) in [("rectangle-vertical", true), ("rectangle-horizontal", false)] {
+                if icons::button(ui, icon, 24.0, (h > w) == portrait, if portrait { "Portrait" } else { "Landscape" }).clicked() {
+                    f.insert("__orientation".into(), json!(if portrait { "portrait" } else { "landscape" }));
+                    if (h > w) != portrait {
+                        swap_size(f);
+                    }
+                }
+            }
+        });
+        ui.add_space(4.0);
+        small_label(ui, tl!("Background Contents"));
+        // A custom colour is kept as its "#rrggbb", which `file.new` takes as is (#4789).
+        let current = get_s(f, "background", "white");
+        let mut bg = if crate::color_picker_ui::parse_hex(&current).is_some() { CUSTOM.to_string() } else { current.clone() };
+        let opts = [
+            ("white".to_string(), tl!("White")),
+            ("black".to_string(), tl!("Black")),
+            ("backgroundColor".to_string(), tl!("Background Color")),
+            ("transparent".to_string(), tl!("Transparent")),
+            (CUSTOM.to_string(), tl!("Custom…")),
+        ];
+        let shown = background_rgb(app, f);
+        let mut pick = false;
+        ui.horizontal(|ui| {
+            if widgets::dropdown(ui, "nd-bg", &mut bg, &opts, 240.0 - SWATCH - 6.0) {
+                if bg == CUSTOM {
+                    // Custom… opens the Color Picker on the colour shown so far.
+                    pick = true;
+                } else {
+                    f.insert("background".into(), json!(bg));
+                }
+                f.remove("__savedPreset");
+                // A fresh choice of Background Color uses today's toolbox colour. Selecting a
+                // saved preset instead restores the colour captured when it was saved.
+                f.remove("backgroundColor");
+            }
+            // Photoshop's swatch beside the menu: the colour the canvas starts with; a click
+            // opens the Color Picker, as Custom… does.
+            let (r, resp) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
+            match shown {
+                Some(c) => {
+                    ui.painter().rect_filled(
+                        r,
+                        2.0,
+                        egui::Color32::from_rgb((c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8),
+                    );
+                }
+                None => widgets::checker(ui.painter(), r, 4.0),
+            }
+            ui.painter().rect_stroke(r, 2.0, Stroke::new(1.0, Tokens::get(ui.ctx()).field_border), StrokeKind::Inside);
+            let resp = resp.on_hover_text(tl!("Custom background color")).on_hover_cursor(egui::CursorIcon::PointingHand);
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Custom background color")));
+            if resp.clicked() {
+                pick = true;
+                f.remove("__savedPreset");
+            }
+        });
+        if pick {
+            let start = shown.unwrap_or([1.0; 3]);
+            f.insert("background".into(), json!(crate::color_picker_ui::hex(start)));
+            f.remove("backgroundColor");
+            crate::color_picker_ui::request_field(f, "background", &crate::color_picker_ui::title_for(tl!("Background Contents")));
+        }
+
+        ui.add_space(8.0);
+        egui::CollapsingHeader::new(tl!("Advanced"))
+            .id_salt("new-document-advanced")
+            .default_open(f.get("__advanced").and_then(Value::as_bool).unwrap_or(false))
+            .show(ui, |ui| {
+                ui.add_space(4.0);
+                small_label(ui, tl!("Resolution"));
+                ui.horizontal(|ui| {
+                    let per_cm = get_s(f, "__resUnit", "in") == "cm";
+                    let mut r = if per_cm { ppi / 2.54 } else { ppi };
+                    if widgets::value_field(ui, &mut r, 1.0..=30_000.0, "", 110.0).changed() {
+                        set_resolution(f, if per_cm { r * 2.54 } else { r });
+                    }
+                    let mut ru = get_s(f, "__resUnit", "in");
+                    if widgets::dropdown(
+                        ui,
+                        "nd-resunit",
+                        &mut ru,
+                        &[("in".to_string(), tl!("Pixels/Inch")), ("cm".to_string(), tl!("Pixels/Centimeter"))],
+                        120.0,
+                    ) {
+                        f.insert("__resUnit".into(), json!(ru));
+                        f.remove("__savedPreset");
+                    }
+                });
+                ui.add_space(4.0);
+                small_label(ui, tl!("Color Mode"));
+                ui.horizontal(|ui| {
+                    let mut mode = get_s(f, "mode", "rgb");
+                    if widgets::dropdown(
+                        ui,
+                        "nd-mode",
+                        &mut mode,
+                        &[
+                            ("gray".to_string(), tl!("Grayscale")),
+                            ("rgb".to_string(), tl!("RGB Color")),
+                            ("cmyk".to_string(), tl!("CMYK Color")),
+                            ("lab".to_string(), tl!("Lab Color")),
+                        ],
+                        110.0,
+                    ) {
+                        f.insert("mode".into(), json!(mode));
+                        f.remove("__savedPreset");
+                    }
+                    let mut depth = f.get("depth").and_then(Value::as_u64).unwrap_or(8);
+                    let depth_options: Vec<(u64, &str, &str)> = DEPTH_OPTIONS.iter().map(|(bits, label, tooltip)| (*bits, *label, *tooltip)).collect();
+                    if widgets::dropdown_with_tooltips(ui, "nd-depth", &mut depth, &depth_options, 120.0) {
+                        f.insert("depth".into(), json!(depth));
+                        f.remove("__savedPreset");
+                    }
+                });
+            });
+        save_preset(app, ui, f);
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_uses_the_oriented_card_dimensions_and_recent_snapshots_stay_intact() {
+        let mut f = crate::state::UiState::new_document_fields();
+        f.insert("__orientation".into(), json!("landscape"));
+        let units = UnitsAndRulers::default();
+        let cards = resolved_cards(&f, "Popular", "1440x1080", &[], &units);
+        let instagram = cards.iter().find(|c| c.title() == "Instagram post, 3:4").expect("oriented search result");
+        apply_card(&mut f, instagram, &units);
+        assert_eq!((f["width"].as_u64(), f["height"].as_u64()), (Some(1440), Some(1080)));
+        let recent = DocumentSettings {
+            width: 1080,
+            height: 1440,
+            resolution: 72.0,
+            mode: "rgb".into(),
+            depth: 8,
+            background: "white".into(),
+            background_color: None,
+            unit: "px".into(),
+            resolution_unit: "in".into(),
+        };
+        let cards = resolved_cards(&f, "Recent", "1080x1440", &[recent], &units);
+        assert!(cards.iter().any(|c| matches!(c, Card::Recent(_))));
+    }
 
     #[test]
     fn units_round_trip_through_pixels() {
@@ -1027,7 +1115,7 @@ mod tests {
                 ..Default::default()
             };
             let app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
-            let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_ui_state(
+            let mut h = Harness::builder().with_max_steps(64).with_size(egui::vec2(1400.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
                 |ui, app| {
                     crate::prefs_ui::tick(app, ui.ctx());
                     crate::dialogs::show(app, ui.ctx());
@@ -1036,7 +1124,7 @@ mod tests {
             );
             PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
             h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
-            h.run_steps(3);
+            h.run();
             h
         }
 
@@ -1084,7 +1172,7 @@ mod tests {
 
         fn name_preset(h: &mut Harness<'static, PhotocraftApp>, name: &str) {
             h.get_by_label("Save Preset…").click();
-            h.run_steps(2);
+            h.run();
             h.get_by_role_and_label(Role::TextInput, "Preset Name").click();
             h.run_steps(1);
             h.event(egui::Event::Text(name.into()));
@@ -1102,7 +1190,7 @@ mod tests {
             set_fields(&mut h, f);
             name_preset(&mut h, " Product square ");
             h.get_by_label("Save").click();
-            h.run_steps(3);
+            h.run();
             assert!(h.state().session.documents().is_empty(), "saving does not create a document");
             assert_eq!(h.state().session.presets.documents[0].name, "Product square");
             type_into(&mut h, 0, "32");
@@ -1111,28 +1199,28 @@ mod tests {
 
             let mut h = harness_with_store(&store);
             h.get_by_label("Saved").click();
-            h.run_steps(2);
+            h.run();
             h.get_by_label("Product square").click();
-            h.run_steps(2);
+            h.run();
             assert!(h.state().session.documents().is_empty(), "selection only populates the form");
             assert_eq!(fields(&h)["name"], "Untitled-1");
             assert_eq!(fields(&h)["background"], "transparent");
             h.get_by_label("Create").click();
-            h.run_steps(3);
+            h.run();
             assert_eq!(created(&h), (1600, 1600, 72.0));
             let pixel = h.state_mut().session.execute("document.pixel", serde_json::json!({"x":0,"y":0})).unwrap();
             assert_eq!(pixel[3], 0.0);
 
             h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
-            h.run_steps(2);
+            h.run();
             h.get_by_label("Saved").click();
-            h.run_steps(2);
+            h.run();
             h.get_by_label("Delete").click();
-            h.run_steps(3);
+            h.run();
             drop(h);
             let mut h = harness_with_store(&store);
             h.get_by_label("Saved").click();
-            h.run_steps(2);
+            h.run();
             assert!(h.state().session.presets.documents.is_empty());
             assert!(h.query_by_label("No saved presets yet.").is_some());
         }
@@ -1147,18 +1235,18 @@ mod tests {
             assert_eq!(h.state().ui.dialogs.len(), 1);
             name_preset(&mut h, " ENTER TEST ");
             h.get_by_label("Save").click();
-            h.run_steps(2);
+            h.run();
             assert!(fields(&h).get("__presetError").is_some());
             assert_eq!(h.state().session.presets.documents.len(), 1);
             assert!(h.state().session.documents().is_empty());
             h.get_by_label("Cancel").click();
-            h.run_steps(2);
+            h.run();
             name_preset(&mut h, "");
             // Cancel keeps the entered name; clear it as an automation edit, then use the button.
             h.state_mut().ui.dialogs[0].fields.insert("__presetName".into(), serde_json::json!("   "));
-            h.run_steps(2);
+            h.run();
             h.get_by_label("Save").click();
-            h.run_steps(2);
+            h.run();
             assert!(fields(&h).get("__presetError").is_some());
             assert_eq!(h.state().session.presets.documents.len(), 1);
         }
@@ -1166,12 +1254,13 @@ mod tests {
         fn harness() -> Harness<'static, PhotocraftApp> {
             let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
             let mut h = Harness::builder()
+                .with_max_steps(64)
                 .with_size(egui::vec2(1400.0, 900.0))
                 .with_step_dt(1.0 / 60.0)
                 .build_ui_state(|ui, app| crate::dialogs::show(app, ui.ctx()), app);
             PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
             h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
-            h.run_steps(3);
+            h.run();
             h
         }
 
@@ -1181,7 +1270,7 @@ mod tests {
             h.drag_at(at);
             h.run_steps(1);
             h.drop_at(at);
-            h.run_steps(2);
+            h.run();
         }
 
         /// The Width (0), Height (1) and Resolution (2) fields.
@@ -1191,6 +1280,10 @@ mod tests {
 
         /// Click into field `i` (which selects its text) and type `text`, as a user does.
         fn type_into(h: &mut Harness<'static, PhotocraftApp>, i: usize, text: &str) {
+            if i == 2 && h.query_all_by_role(Role::SpinButton).count() == 2 {
+                h.get_by_label("Advanced").click();
+                h.run();
+            }
             let r = field(h, i);
             click_at(h, r.center());
             for c in text.chars() {
@@ -1205,12 +1298,12 @@ mod tests {
 
         fn set_fields(h: &mut Harness<'static, PhotocraftApp>, f: serde_json::Map<String, serde_json::Value>) {
             h.state_mut().ui.dialogs[0].fields = f;
-            h.run_steps(2);
+            h.run();
         }
 
         fn enter(h: &mut Harness<'static, PhotocraftApp>) {
             h.key_press(egui::Key::Enter);
-            h.run_steps(3);
+            h.run();
         }
 
         fn created(h: &Harness<'static, PhotocraftApp>) -> (u32, u32, f32) {
@@ -1219,7 +1312,204 @@ mod tests {
             (d.size.width, d.size.height, d.resolution_dpi)
         }
 
-        /// Preset cards paint their titles directly, without an accessibility label.
+        fn search(h: &mut Harness<'static, PhotocraftApp>, query: &str) {
+            h.get_by_role_and_label(Role::TextInput, "Search formats").click();
+            h.run_steps(1);
+            h.event(egui::Event::Text(query.into()));
+            h.run();
+        }
+
+        #[test]
+        fn search_enter_selects_social_size_without_creating_until_create() {
+            let mut h = harness();
+            let mut f = fields(&h);
+            f.insert("name".into(), serde_json::json!("Campaign"));
+            f.insert("depth".into(), serde_json::json!(16));
+            f.insert("background".into(), serde_json::json!("transparent"));
+            set_fields(&mut h, f);
+            h.get_by_label("Print").click();
+            h.run();
+            search(&mut h, "tiktok");
+            assert!(h.query_by_role_and_label(Role::Button, "Stories / Reels / Shorts").is_some());
+            enter(&mut h);
+            assert!(h.state().session.documents().is_empty());
+            assert_eq!(fields(&h)["__preset"], "Stories / Reels / Shorts");
+            assert_eq!(fields(&h)["name"], "Campaign");
+            assert_eq!(fields(&h)["depth"], 16);
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (1080, 1920, 72.0));
+            let pixel = h.state_mut().session.execute("document.pixel", serde_json::json!({"x":0,"y":0})).unwrap();
+            assert_eq!(pixel[3], 0.0);
+        }
+
+        #[test]
+        fn search_matches_the_preference_scaled_print_size_and_enter_applies_it_once() {
+            let mut h = harness();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.printResolution","value":200.0})).unwrap();
+            h.run();
+            search(&mut h, "2550x3300");
+            assert!(h.query_by_role_and_label(Role::Button, "Letter").is_none(), "the listed 300 ppi size is no longer offered");
+            h.get_by_label("Clear").click();
+            h.run();
+            search(&mut h, "1700x2200");
+            assert!(h.query_by_role_and_label(Role::Button, "Letter").is_some());
+            // Card text and the created pixels must agree, even though the underlying preset
+            // stays at its listed resolution to avoid applying the scale a second time.
+            let _ = preset_title_at(&h, "1700 × 2200 px");
+            enter(&mut h);
+            assert!(h.state().session.documents().is_empty());
+            assert_eq!(fields(&h)["__unit"], "in");
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (1700, 2200, 200.0));
+        }
+
+        #[test]
+        fn social_search_and_card_selection_keep_pixels_at_the_screen_resolution() {
+            for (query, name, height) in [("1080x1440", "Instagram post, 3:4", 1440), ("1080x1350", "Instagram post, 4:5", 1350)] {
+                let mut h = harness();
+                h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.screenResolution","value":600.0})).unwrap();
+                h.run();
+                search(&mut h, query);
+                let at = h.get_by_role_and_label(Role::Button, name).rect().center();
+                click_at(&mut h, at);
+                assert_eq!(fields(&h)["__unit"], "px", "a screen resolution above 300 does not make a print preset");
+                assert_eq!(fields(&h)["resolution"], 600.0);
+                let _ = preset_title_at(&h, &format!("1080 × {height} px"));
+                h.get_by_label("Create").click();
+                h.run();
+                assert_eq!(created(&h), (1080, height, 600.0));
+            }
+        }
+
+        #[test]
+        fn recent_search_restores_captured_settings_without_preference_rescaling() {
+            let mut h = harness();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.printResolution","value":200.0})).unwrap();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.screenResolution","value":600.0})).unwrap();
+            h.state_mut()
+                .run(
+                    "document.recent.add",
+                    serde_json::json!({"settings":{
+                        "width":800,"height":600,"resolution":120.0,"mode":"cmyk","depth":16,
+                        "background":"black","unit":"mm","resolutionUnit":"cm"
+                    }}),
+                )
+                .unwrap();
+            h.run();
+            h.get_by_label("Recent").click();
+            h.run();
+            search(&mut h, "800x600");
+            enter(&mut h);
+            assert!(h.state().session.documents().is_empty());
+            let f = fields(&h);
+            assert_eq!((f["mode"].as_str(), f["depth"].as_u64(), f["background"].as_str()), (Some("cmyk"), Some(16), Some("black")));
+            assert_eq!((f["__unit"].as_str(), f["__resUnit"].as_str()), (Some("mm"), Some("cm")));
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (800, 600, 120.0));
+            let recent = h.state().session.presets.recent_documents.first().unwrap();
+            assert_eq!((recent.mode.as_str(), recent.depth, recent.unit.as_str()), ("cmyk", 16, "mm"));
+        }
+
+        #[test]
+        fn typed_physical_units_create_the_expected_pixels_while_displaying_pixels() {
+            let mut h = harness();
+            let mut f = fields(&h);
+            f.insert("resolution".into(), serde_json::json!(300.0));
+            f.insert("__unit".into(), serde_json::json!("px"));
+            set_fields(&mut h, f);
+            type_into(&mut h, 0, "210mm");
+            type_into(&mut h, 1, "297mm");
+            assert_eq!(fields(&h)["__unit"], "px");
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (2480, 3508, 300.0));
+        }
+
+        #[test]
+        fn empty_search_enter_keeps_the_form_and_clear_restores_the_category() {
+            let mut h = harness();
+            search(&mut h, "no-such-format");
+            assert!(h.query_by_label("No matching formats.").is_some());
+            enter(&mut h);
+            assert!(h.state().session.documents().is_empty());
+            assert_eq!(fields(&h)["width"], 1920);
+            h.get_by_label("Clear").click();
+            h.run();
+            assert!(h.query_by_role_and_label(Role::Button, "Stories / Reels / Shorts").is_some());
+        }
+
+        fn assert_centered(h: &Harness<'static, PhotocraftApp>) {
+            let id = h.state().ui.dialogs[0].id;
+            let rect = h.ctx.memory(|m| m.area_rect(egui::Id::new(("dialog", id)))).expect("modal rect");
+            assert!((rect.center() - h.ctx.content_rect().center()).length() <= 2.0, "modal {rect:?}, viewport {:?}", h.ctx.content_rect());
+        }
+
+        #[test]
+        fn opens_and_reopens_centered_in_every_theme_even_with_a_remembered_position() {
+            for theme in crate::theme::ThemeKind::ALL {
+                let mut h = harness();
+                PhotocraftApp::setup_context(&h.ctx, theme);
+                h.ctx.data_mut(|m| m.insert_persisted(egui::Id::new(("dialog-place", "NewDocument")), egui::vec2(5.0, 7.0)));
+                h.run();
+                assert_centered(&h);
+                h.get_by_label("Advanced").click();
+                h.run();
+                assert_centered(&h);
+                assert!(h.ctx.content_rect().contains_rect(h.get_by_label("Create").rect()));
+                h.get_by_label("Close").click();
+                h.run();
+                h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
+                h.run();
+                assert_centered(&h);
+                h.set_size(egui::vec2(640.0, 740.0));
+                h.run();
+                assert_centered(&h);
+                assert!(h.ctx.content_rect().contains_rect(h.get_by_label("Create").rect()));
+            }
+        }
+
+        #[test]
+        fn saving_from_a_search_clears_the_filter_and_saved_search_selects_by_name() {
+            let mut h = harness();
+            search(&mut h, "4:5");
+            enter(&mut h);
+            name_preset(&mut h, "Campaign vertical");
+            h.get_by_label("Save").click();
+            h.run();
+            assert_eq!(fields(&h)["__search"], "");
+            assert!(h.query_by_label("Campaign vertical").is_some());
+            search(&mut h, "campaign");
+            enter(&mut h);
+            assert_eq!(fields(&h)["__savedPreset"], "Campaign vertical");
+            assert!(h.state().session.documents().is_empty());
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (1080, 1350, 72.0));
+        }
+
+        #[test]
+        fn narrow_viewport_keeps_search_and_create_inside_the_window() {
+            let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+            let mut h =
+                Harness::builder().with_max_steps(64).with_size(egui::vec2(640.0, 740.0)).build_ui_state(|ui, app| crate::dialogs::show(app, ui.ctx()), app);
+            PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+            h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
+            h.run();
+            let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 740.0));
+            assert!(viewport.contains_rect(h.get_by_label("Create").rect()), "create {:?}, viewport {:?}", h.get_by_label("Create").rect(), viewport);
+            assert!(viewport.contains_rect(h.get_by_role_and_label(Role::TextInput, "Search formats").rect()));
+            search(&mut h, "1080x1350");
+            h.get_by_role_and_label(Role::Button, "Instagram post, 4:5").click();
+            h.run();
+            h.get_by_label("Create").click();
+            h.run();
+            assert_eq!(created(&h), (1080, 1350, 72.0));
+        }
+
+        /// Find the painted title inside a preset card.
         fn preset_title_at(h: &Harness<'static, PhotocraftApp>, title: &str) -> egui::Pos2 {
             fn find(shape: &egui::Shape, title: &str) -> Option<egui::Pos2> {
                 match shape {
@@ -1228,7 +1518,7 @@ mod tests {
                     _ => None,
                 }
             }
-            h.output().shapes.iter().find_map(|shape| find(&shape.shape, title)).expect("visible preset title")
+            h.output().shapes.iter().find_map(|shape| find(&shape.shape, title)).unwrap_or_else(|| panic!("visible preset title: {title:?}"))
         }
 
         fn second_click_creates_once(h: &mut Harness<'static, PhotocraftApp>, at: egui::Pos2) {
@@ -1276,6 +1566,8 @@ mod tests {
         #[test]
         fn double_click_clipboard_preset_creates_its_size_and_current_details() {
             let mut h = harness();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.printResolution","value":200.0})).unwrap();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.screenResolution","value":96.0})).unwrap();
             let mut f = fields(&h);
             super::super::set_clipboard(&mut f, 37, 23);
             apply_preset(&mut f, &("Other size", 100, 200, 300.0), &Default::default());
@@ -1299,6 +1591,8 @@ mod tests {
         #[test]
         fn double_click_saved_preset_restores_all_settings_and_captured_background() {
             let mut h = harness();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.printResolution","value":200.0})).unwrap();
+            h.state_mut().run("prefs.set", serde_json::json!({"path":"unitsAndRulers.screenResolution","value":96.0})).unwrap();
             h.state_mut()
                 .run(
                     "document.presets.save",
@@ -1332,8 +1626,9 @@ mod tests {
             let mut h = harness();
             h.state_mut().run("prefs.set", serde_json::json!({"path": "unitsAndRulers.printResolution", "value": 150.0})).unwrap();
             h.state_mut().run("prefs.set", serde_json::json!({"path": "unitsAndRulers.screenResolution", "value": 96.0})).unwrap();
+            // Wait for the responsive modal to finish re-centering before inspecting its paint.
             h.get_by_label("Photo").click();
-            h.run_steps(2);
+            h.run();
             let at = preset_title_at(&h, "Landscape, 6 x 4");
             click_at(&mut h, at);
             assert_eq!(fields(&h)["__unit"], "in");
@@ -1341,9 +1636,9 @@ mod tests {
             assert_eq!(created(&h), (900, 600, 150.0), "6 x 4 in at 150 ppi");
 
             h.state_mut().ui.open_dialog(DialogKind::NewDocument, UiState::new_document_fields());
-            h.run_steps(2);
+            h.run();
             h.get_by_label("Web").click();
-            h.run_steps(2);
+            h.run();
             let at = preset_title_at(&h, "Web Minimum");
             click_at(&mut h, at);
             enter(&mut h);
@@ -1401,13 +1696,13 @@ mod tests {
             let mut f = fields(&h);
             super::super::set_clipboard(&mut f, 640, 360);
             set_fields(&mut h, f);
-            // Recent lists the Clipboard card first: three presets instead of two.
-            assert!(h.query_by_label_contains("BLANK DOCUMENT PRESETS (3)").is_some());
-            let heading = h.get_by_label_contains("BLANK DOCUMENT PRESETS").rect();
-            // Pick the second card, then the first (Clipboard) again.
-            click_at(&mut h, heading.left_bottom() + egui::vec2(80.0 + 172.0, 60.0));
-            assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some("Default PhotoCraft Size"));
-            click_at(&mut h, heading.left_bottom() + egui::vec2(80.0, 60.0));
+            assert!(h.query_by_label_contains("BLANK DOCUMENT PRESETS (7)").is_some());
+            let clipboard = h.get_by_role_and_label(Role::Button, super::super::CLIPBOARD).rect();
+            let social = h.get_by_role_and_label(Role::Button, "Stories / Reels / Shorts").rect();
+            assert!(clipboard.left() < social.left(), "clipboard is the first card");
+            click_at(&mut h, social.center());
+            assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some("Stories / Reels / Shorts"));
+            click_at(&mut h, clipboard.center());
             assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some(super::super::CLIPBOARD));
             enter(&mut h);
             assert_eq!(created(&h), (640, 360, 72.0));
@@ -1418,10 +1713,9 @@ mod tests {
             let mut h = harness();
             type_into(&mut h, 0, "512");
             h.get_by_label("Photo").click();
-            h.run_steps(2);
-            // The first card ("Landscape, 6 x 4") sits under the presets heading.
-            let heading = h.get_by_label_contains("BLANK DOCUMENT PRESETS").rect();
-            click_at(&mut h, heading.left_bottom() + egui::vec2(80.0, 60.0));
+            h.run();
+            h.get_by_role_and_label(Role::Button, "Landscape, 6 x 4").click();
+            h.run();
             assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some("Landscape, 6 x 4"));
             enter(&mut h);
             assert_eq!(created(&h), (1800, 1200, 300.0));
@@ -1486,11 +1780,11 @@ mod tests {
         fn picked_orientation_turns_the_presets() {
             let mut h = harness();
             h.get_by_label("Print").click();
-            h.run_steps(2);
-            // The default 1920 x 1080 is already landscape: Landscape swaps nothing, but is picked.
-            let label = h.get_by_label("Orientation").rect();
-            let gap = h.ctx.global_style().spacing.item_spacing.x;
-            click_at(&mut h, egui::pos2(label.right() + gap + 24.0 + gap + 12.0, label.center().y));
+            h.run();
+            // Use the named button; the responsive layout can change icon positions.
+            h.get_by_role_and_label(Role::Button, "Landscape").click();
+            h.run();
+            assert_eq!(fields(&h)["__orientation"], "landscape");
             assert_eq!((fields(&h)["width"].as_u64(), fields(&h)["height"].as_u64()), (Some(1920), Some(1080)));
             let _ = preset_title_at(&h, "11.7 x 8.3 in @ 300 ppi");
             let at = preset_title_at(&h, "A4");
@@ -1515,7 +1809,7 @@ mod tests {
             // Screen presets stay in pixels.
             h.get_by_label("Web").click();
             h.run_steps(2);
-            let _ = preset_title_at(&h, "1024 x 768 px @ 72 ppi");
+            let _ = preset_title_at(&h, "1024 × 768 px");
             enter(&mut h);
             assert_eq!(created(&h), (2480, 3508, 300.0));
         }

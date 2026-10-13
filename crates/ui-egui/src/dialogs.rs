@@ -157,7 +157,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         // effects, extends down and right instead of re-centring.
         let pinned: Option<egui::Vec2> = ctx.data(|m| m.get_temp(id));
         let place = place_id(&d);
-        let start = pinned.or_else(|| ctx.data_mut(|m| m.get_persisted::<egui::Vec2>(place))).or_else(|| crate::blur_pins::first_place(&d.fields, ctx));
+        // New Document always opens centred; dragging can pin this opening only.
+        let start = if d.kind == DialogKind::NewDocument {
+            pinned
+        } else {
+            pinned.or_else(|| ctx.data_mut(|m| m.get_persisted::<egui::Vec2>(place))).or_else(|| crate::blur_pins::first_place(&d.fields, ctx))
+        };
         let mut drag = egui::Vec2::ZERO;
         let mut sizing = false;
         let area = match start {
@@ -188,15 +193,14 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             // A dialog of a few short fields (`__compact`, Fit Image) is narrower (#4673): the title
             // rule and the button row fill the width they are given, so it needs its own maximum too.
             let compact = d.fields.contains_key("__compact");
-            if !compact {
+            if d.kind == DialogKind::NewDocument {
+                ui.set_min_width(crate::new_doc_ui::dialog_width(ctx));
+            } else if !compact {
                 ui.set_min_width(380.0);
             }
             let wide = crate::prefs_ui::width(&d.fields, (ctx.content_rect().width() - 48.0).max(380.0));
             if let Some(w) = wide {
                 ui.set_min_width(w.min(460.0));
-            }
-            if d.kind == DialogKind::NewDocument {
-                ui.set_min_width(800.0);
             }
             // The About window: room for the contributor table, the same width on every tab.
             let about_tabs = d.kind == DialogKind::About && d.fields.get("systemInfo").and_then(Value::as_bool) != Some(true);
@@ -204,7 +208,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 ui.set_min_width(700.0);
             }
             ui.set_max_width(wide.unwrap_or(if d.kind == DialogKind::NewDocument {
-                800.0
+                crate::new_doc_ui::dialog_width(ctx)
             } else if about_tabs {
                 700.0
             } else if d.kind == DialogKind::LayerStyle || d.fields.contains_key("__export") || crate::color_picker_ui::owns(&d.fields) {
@@ -242,7 +246,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             crate::field_tab::begin(ui.ctx());
             match d.kind {
                 DialogKind::NewDocument => {
-                    if crate::new_doc_ui::body(app, ui, &mut fields) {
+                    let create = egui::ScrollArea::vertical()
+                        .id_salt("new-document-body")
+                        .max_height((ctx.content_rect().height() - DIALOG_CHROME).max(120.0))
+                        .show(ui, |ui| crate::new_doc_ui::body(app, ui, &mut fields))
+                        .inner;
+                    if create {
                         outcome = Some(true);
                     }
                 }
@@ -438,15 +447,31 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         });
         // The picker has a larger frame margin; include that whole frame in the canvas hit guard.
         shown.push(if color_picker { modal.response.rect } else { modal.inner });
-        // Pin once laid out at its real size (the first frame is an invisible sizing pass).
-        if !sizing && (web || pinned.is_none() || drag != egui::Vec2::ZERO) {
+        if d.kind == DialogKind::NewDocument && start.is_none() && !sizing {
+            let screen = ctx.content_rect();
+            // egui anchors with the previous frame's measured size. A growing/shrinking
+            // catalog or settings panel needs another frame before input uses its new position.
+            if modal.response.rect.width() <= screen.width()
+                && modal.response.rect.height() <= screen.height()
+                && (modal.response.rect.center() - screen.center()).length_sq() > 1.0
+            {
+                ctx.request_repaint();
+            }
+        }
+        // Other dialogs remember their position. New Document follows its centre until dragged.
+        let pin = if d.kind == DialogKind::NewDocument { pinned.is_some() || drag != egui::Vec2::ZERO } else { pinned.is_none() || drag != egui::Vec2::ZERO };
+        if !sizing && (web || pin) {
             let screen = ctx.content_rect();
             // Keep the whole dialog (and so its title bar) on screen.
             let room = (screen.size() - modal.response.rect.size()).max(egui::Vec2::ZERO);
             let offset = (pinned.unwrap_or(modal.response.rect.min - screen.min) + drag).clamp(egui::Vec2::ZERO, room);
+            if d.kind == DialogKind::NewDocument && pinned != Some(offset) {
+                // Search, Advanced and preset naming can change the height after opening.
+                ctx.request_repaint();
+            }
             ctx.data_mut(|m| m.insert_temp(id, offset));
             // A dialog the user moved reopens there (Photoshop remembers each dialog's place).
-            if drag != egui::Vec2::ZERO {
+            if drag != egui::Vec2::ZERO && d.kind != DialogKind::NewDocument {
                 ctx.data_mut(|m| m.insert_persisted(place, offset));
             }
         }
