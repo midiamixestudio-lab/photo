@@ -25,6 +25,16 @@ pub fn moves_whole(layer: &Layer) -> bool {
     matches!(layer.content, LayerContent::Group(_) | LayerContent::Text(_) | LayerContent::Shape(_) | LayerContent::Smart(_))
 }
 
+/// Document-space bounds of all of `layer`'s content (its mask's for an empty layer), whatever is
+/// selected: where the layer sits, as snapping to it sees it.
+pub fn whole_bounds(layer: &Layer) -> Rect {
+    let content = match &layer.content {
+        LayerContent::Group(g) => g.children.iter().map(whole_bounds).fold(Rect::EMPTY, |a, b| a.union(&b)),
+        _ => layer.surface().map_or(Rect::EMPTY, photocraft_compose::bounds::content_bounds),
+    };
+    if content.is_empty() { layer.mask.as_ref().map_or(Rect::EMPTY, |m| photocraft_compose::bounds::content_bounds(&m.surface)) } else { content }
+}
+
 /// Document-space bounds a transform of `layer` starts from (what Free Transform frames): the
 /// content within the selection, or all of it for a layer that [`moves_whole`] (#2630).
 /// Content scans are cached per tile: snapping asks for every layer's bounds per Move drag.

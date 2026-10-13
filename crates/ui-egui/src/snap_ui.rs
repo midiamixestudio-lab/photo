@@ -31,6 +31,9 @@ pub enum Gesture {
     SelectionMove { rect: [f64; 4] },
     /// A guide being moved with the Move tool.
     Guide,
+    /// The Free Transform reference point: snaps to the box's corners, edge midpoints and centre
+    /// (as placed when the drag began, however the box is turned), then as a point.
+    Pivot { anchors: [[f64; 2]; 9] },
 }
 
 /// Snapping state of the drag in progress.
@@ -126,25 +129,10 @@ fn quad_rect(q: &[[f64; 2]; 4]) -> [f64; 4] {
     [xs.clone().fold(f64::MAX, f64::min), ys.clone().fold(f64::MAX, f64::min), xs.fold(f64::MIN, f64::max), ys.fold(f64::MIN, f64::max)]
 }
 
-/// Is `p` inside the quad (even-odd)?
-fn in_quad(q: &[[f64; 2]; 4], p: [f64; 2]) -> bool {
-    let mut inside = false;
-    for i in 0..4 {
-        let (a, b) = (q[i], q[(i + 3) % 4]);
-        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0] {
-            inside = !inside;
-        }
-    }
-    inside
-}
-
-/// Near a Free Transform corner or edge handle (within its grab radius)?
-fn near_handle(q: &[[f64; 2]; 4], p: [f64; 2], tol: f64) -> bool {
-    (0..4).any(|i| {
-        let (a, b) = (q[i], q[(i + 1) % 4]);
-        let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
-        [a, mid].iter().any(|h| (h[0] - p[0]).hypot(h[1] - p[1]) <= tol)
-    })
+/// The nine reference point locations of a Free Transform box: corners, edge midpoints, centre.
+fn box_anchors(q: &[[f64; 2]; 4]) -> [[f64; 2]; 9] {
+    let mid = |a: [f64; 2], b: [f64; 2]| [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+    [q[0], q[1], q[2], q[3], mid(q[0], q[1]), mid(q[1], q[2]), mid(q[2], q[3]), mid(q[3], q[0]), mid(mid(q[0], q[2]), mid(q[1], q[3]))]
 }
 
 /// Photoshop: holding Ctrl (Windows) / Control (macOS) *during* a drag temporarily turns snapping
@@ -178,12 +166,19 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
             // Distort is freehand corner placement (fitting an image onto a screen, say): guides
             // and edges pulling the corners about only get in the way.
             None
-        } else if near_handle(&t.quad, p, crate::transform_tool::handle_tolerance(app)) {
-            Some((Gesture::Point, vec![LayerId(t.layer)]))
-        } else if in_quad(&t.quad, p) {
-            Some((Gesture::TransformMove { rect: quad_rect(&t.quad) }, vec![LayerId(t.layer)]))
         } else {
-            None
+            // Classify the press as `transform_tool::pointer` does: a handle or the reference point
+            // (dragged, or ⌥-pressed anywhere off the handles) snaps itself; only a press inside the
+            // box moves it and snaps its bounds. Snapping the box's bounds while the reference
+            // point is dragged held the point still and drew guides at edges the box never reached.
+            use crate::transform_tool::Hit;
+            match crate::transform_tool::hit(t, p, crate::transform_tool::handle_tolerance(app), mods.alt) {
+                Hit::Corner(_) | Hit::Edge(_) => Some((Gesture::Point, vec![LayerId(t.layer)])),
+                Hit::Pivot => Some((Gesture::Pivot { anchors: box_anchors(&t.quad) }, vec![LayerId(t.layer)])),
+                Hit::Inside | Hit::Outside if mods.alt => Some((Gesture::Pivot { anchors: box_anchors(&t.quad) }, vec![LayerId(t.layer)])),
+                Hit::Inside => Some((Gesture::TransformMove { rect: quad_rect(&t.quad) }, vec![LayerId(t.layer)])),
+                Hit::Outside => None,
+            }
         }
     } else if tool == Tool::Move && crate::rulers::guide_at(app, p[0], p[1]).is_some() {
         Some((Gesture::Guide, Vec::new()))
@@ -224,8 +219,9 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
         // A guide never snaps to itself (or other guides).
         targets = targets.filtered(|k| k != SnapKind::Guide);
     }
-    if matches!(gesture, Gesture::SelectionMove { .. }) {
-        // A moving selection never snaps back to where it started.
+    if matches!(gesture, Gesture::SelectionMove { .. } | Gesture::TransformMove { .. }) {
+        // A moving selection, or the selected pixels a transform moves, never snaps back to where
+        // it started.
         targets = targets.filtered(|k| k != SnapKind::Selection);
     }
     let smart = if matches!(gesture, Gesture::Move { .. }) && smart_on(app) { build(app, &exclude, true) } else { SnapTargets::default() };
@@ -263,6 +259,13 @@ fn apply(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) -> [f64; 2
     let (out, lines) = match &snap.gesture {
         Gesture::Point => crop_handle(app, p, mods, &snap.targets, tol).unwrap_or_else(|| snap.targets.snap_point(p, tol)),
         Gesture::Guide => snap.targets.snap_point(p, tol),
+        Gesture::Pivot { anchors } => {
+            let nearest = anchors.iter().map(|a| (a[0] - p[0]).hypot(a[1] - p[1])).zip(anchors).min_by(|a, b| a.0.total_cmp(&b.0));
+            match nearest {
+                Some((d, a)) if d <= tol && snap_on(app) => (*a, Vec::new()),
+                _ => snap.targets.snap_point(p, tol),
+            }
+        }
         Gesture::Move { rect } | Gesture::TransformMove { rect } | Gesture::SelectionMove { rect } => {
             let d = [p[0] - snap.start[0], p[1] - snap.start[1]];
             let moved = [rect[0] + d[0], rect[1] + d[1], rect[2] + d[0], rect[3] + d[1]];
@@ -679,6 +682,105 @@ mod tests {
         assert!((q[1][0] - 350.0).abs() < 1e-6, "{q:?}");
         crate::transform_tool::commit(&mut app);
         assert_eq!(mover_bounds(&app).x0, 300);
+    }
+
+    #[test]
+    fn free_transform_reference_point_drag_snaps_the_point_not_the_box() {
+        let mut app = app_with_box();
+        let ctx = egui::Context::default();
+        crate::menus::invoke(&mut app, &ctx, "edit.freeTransform", json!({})).unwrap();
+        let t = app.ui.transform.as_ref().unwrap();
+        let (quad, pivot) = (t.quad, t.pivot);
+        assert_eq!(pivot, [65.0, 60.0]);
+        let alt = egui::Modifiers::ALT;
+        // ⌥-dragging the reference point: moving the box's right edge by the same amount would
+        // land it 2 px from the target's left edge (x = 300), but the point alone moves, so
+        // nothing pulls it there.
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 65.0, y: 60.0, pressure: 1.0 }, alt);
+        crate::canvas::tool_event(&mut app, ToolEvent::Move { x: 273.0, y: 60.0, pressure: 1.0 }, alt);
+        assert!(app.prefs_rt.snap_lines.is_empty(), "{:?}", app.prefs_rt.snap_lines);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: 273.0, y: 60.0 }, alt);
+        let t = app.ui.transform.as_ref().unwrap();
+        assert_eq!(t.pivot, [273.0, 60.0]);
+        assert_eq!(t.quad, quad, "the box stays put");
+        // ⌥-dragging from inside the box places the reference point the same way.
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 50.0, y: 50.0, pressure: 1.0 }, alt);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: 258.0, y: 50.0 }, alt);
+        assert_eq!(app.ui.transform.as_ref().unwrap().pivot, [258.0, 50.0]);
+        // Without ⌥ a press on the reference point moves the box, as anywhere inside it.
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 258.0, y: 50.0, pressure: 1.0 }, alt);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: 65.0, y: 60.0 }, alt);
+        let m = egui::Modifiers::NONE;
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 65.0, y: 60.0, pressure: 1.0 }, m);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: 85.0, y: 60.0 }, m);
+        let t = app.ui.transform.as_ref().unwrap();
+        assert_eq!(t.quad[0], [quad[0][0] + 20.0, quad[0][1]]);
+        assert_eq!(t.pivot, [85.0, 60.0], "the point rides along");
+    }
+
+    #[test]
+    fn free_transform_of_a_selection_never_snaps_back_to_it() {
+        let mut app = app_with_box();
+        app.run("select.rect", json!({"x": 40, "y": 40, "width": 50, "height": 40})).unwrap();
+        let ctx = egui::Context::default();
+        crate::menus::invoke(&mut app, &ctx, "edit.freeTransform", json!({})).unwrap();
+        let quad = app.ui.transform.as_ref().unwrap().quad;
+        let m = egui::Modifiers::NONE;
+        // The box starts on the selection's edges: a short drag must not stick to them.
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 50.0, y: 50.0, pressure: 1.0 }, m);
+        crate::canvas::tool_event(&mut app, ToolEvent::Move { x: 53.0, y: 50.0, pressure: 1.0 }, m);
+        assert!(app.prefs_rt.snap_lines.is_empty(), "{:?}", app.prefs_rt.snap_lines);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: 53.0, y: 50.0 }, m);
+        let q = app.ui.transform.as_ref().unwrap().quad;
+        assert_eq!(q[0][0], quad[0][0] + 3.0, "{q:?}");
+        // Nor does the reference point (away from the box's own handles, which it snaps to).
+        let pivot = app.ui.transform.as_ref().unwrap().pivot;
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: pivot[0], y: pivot[1], pressure: 1.0 }, egui::Modifiers::ALT);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: pivot[0] + 12.0, y: pivot[1] + 3.0 }, egui::Modifiers::ALT);
+        assert_eq!(app.ui.transform.as_ref().unwrap().pivot, [pivot[0] + 12.0, pivot[1] + 3.0]);
+    }
+
+    #[test]
+    fn reference_point_snaps_to_the_turned_box_handles() {
+        let mut app = app_with_box();
+        let ctx = egui::Context::default();
+        crate::menus::invoke(&mut app, &ctx, "edit.freeTransform", json!({})).unwrap();
+        // Turn the box 30° about its centre: its handles leave the horizontal and vertical lines
+        // that point snapping knows about.
+        let t = app.ui.transform.as_mut().unwrap();
+        let (c, (sin, cos)) = (t.pivot, 30f64.to_radians().sin_cos());
+        t.quad = t.quad.map(|q| [c[0] + (q[0] - c[0]) * cos - (q[1] - c[1]) * sin, c[1] + (q[0] - c[0]) * sin + (q[1] - c[1]) * cos]);
+        let q = t.quad;
+        let (m, alt) = (egui::Modifiers::NONE, egui::Modifiers::ALT);
+        let drag = |app: &mut PhotocraftApp, from: [f64; 2], to: [f64; 2], mods| {
+            crate::canvas::tool_event(app, ToolEvent::Down { x: from[0], y: from[1], pressure: 1.0 }, mods);
+            crate::canvas::tool_event(app, ToolEvent::Up { x: to[0], y: to[1] }, mods);
+            app.ui.transform.as_ref().unwrap().pivot
+        };
+        let on = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-9 && (p[1] - q[1]).abs() < 1e-9;
+        // To 2 px off the turned top-right corner: lands on it.
+        let p = drag(&mut app, c, [q[1][0] - 2.0, q[1][1] + 1.0], alt);
+        assert!(on(p, q[1]), "{p:?} vs {:?}", q[1]);
+        // On the corner, ⌥ still grabs the point (a plain press there would take the corner),
+        // and it lands on the bottom edge's midpoint.
+        let mid = [(q[2][0] + q[3][0]) / 2.0, (q[2][1] + q[3][1]) / 2.0];
+        let p = drag(&mut app, [q[1][0] + 1.0, q[1][1]], [mid[0] + 1.5, mid[1] - 1.5], alt);
+        assert!(on(p, mid), "{p:?} vs {mid:?}");
+        assert!(app.ui.transform.as_ref().unwrap().quad == q, "the box never moved");
+        // Back near the centre, and Ctrl held during the drag turns snapping off.
+        let p = drag(&mut app, p, [c[0] + 2.0, c[1]], alt);
+        assert!(on(p, c), "{p:?}");
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: p[0], y: p[1], pressure: 1.0 }, alt);
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: c[0] + 2.0, y: c[1] }, egui::Modifiers { ctrl: true, ..alt });
+        assert_eq!(app.ui.transform.as_ref().unwrap().pivot, [c[0] + 2.0, c[1]]);
+        // A ⌥-click away from the handles places it where clicked.
+        let far = [c[0] + 12.0, c[1] - 3.0];
+        assert_eq!(drag(&mut app, far, far, alt), far);
+        assert!(app.ui.transform.as_ref().unwrap().quad == q, "the box never moved");
+        // With the point on a corner, a plain press there takes the corner.
+        drag(&mut app, far, q[1], alt);
+        drag(&mut app, q[1], [q[1][0] + 10.0, q[1][1]], m);
+        assert!(app.ui.transform.as_ref().unwrap().quad != q, "the corner scaled the box");
     }
 
     #[test]

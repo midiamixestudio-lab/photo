@@ -140,7 +140,7 @@ fn near_border(t: &TransformSession, p: [f64; 2], tol: f64) -> bool {
 }
 
 fn hit(app: &PhotocraftApp, t: &TransformSession, p: [f64; 2]) -> Option<Hit> {
-    let h = crate::transform_tool::hit(t, p, crate::transform_tool::handle_tolerance(app));
+    let h = crate::transform_tool::hit(t, p, crate::transform_tool::handle_tolerance(app), false);
     (h != Hit::Outside || near_border(t, p, ROTATE_PX / f64::from(app.point_zoom().max(0.01)))).then_some(h)
 }
 

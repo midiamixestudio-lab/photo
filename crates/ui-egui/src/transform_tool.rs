@@ -1297,14 +1297,19 @@ pub(crate) enum Hit {
 }
 
 /// The nearest handle within `tol` (on a small box their grab areas overlap), else inside or
-/// outside the box.
-pub(crate) fn hit(t: &TransformSession, p: [f64; 2], tol: f64) -> Hit {
+/// outside the box. The reference point is only grabbed with ⌥ (`alt`) held, and
+/// then ahead of a handle it sits on: without ⌥ a press there takes the handle (or moves the box),
+/// so a reference point snapped onto a handle never fights it for the press.
+pub(crate) fn hit(t: &TransformSession, p: [f64; 2], tol: f64, alt: bool) -> Hit {
     let d = |a: [f64; 2]| ((a[0] - p[0]).powi(2) + (a[1] - p[1]).powi(2)).sqrt();
+    if alt && d(t.pivot) < tol {
+        return Hit::Pivot;
+    }
     let mid = |i: usize| {
         let (a, b) = (t.quad[i], t.quad[(i + 1) % 4]);
         [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]
     };
-    let handles = (0..4).map(|i| (t.quad[i], Hit::Corner(i))).chain((0..4).map(|i| (mid(i), Hit::Edge(i)))).chain([(t.pivot, Hit::Pivot)]);
+    let handles = (0..4).map(|i| (t.quad[i], Hit::Corner(i))).chain((0..4).map(|i| (mid(i), Hit::Edge(i))));
     let nearest = handles.map(|(q, h)| (d(q), h)).filter(|(dist, _)| *dist < tol).min_by(|a, b| a.0.total_cmp(&b.0));
     match nearest {
         Some((_, h)) => h,
@@ -1355,7 +1360,7 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) ->
     let Some(pv) = app.transform_preview.as_mut() else { return false };
     match ev {
         ToolEvent::Down { x, y, .. } => {
-            let mut h = hit(&t, [x, y], tol);
+            let mut h = hit(&t, [x, y], tol, mods.alt);
             // ⌥-click away from the handles moves the reference point there (and drags it).
             if mods.alt
                 && matches!(h, Hit::Inside | Hit::Outside)
@@ -1683,19 +1688,25 @@ pub(crate) fn apply_drag(s: &mut TransformSession, g: Gesture, p: [f64; 2], mods
             if mv.1 {
                 r[3] = v;
             }
-            // ⌥: symmetric about the reference point.
+            // ⌥: scale about the reference point. The dragged side sets the axis's factor and the
+            // opposite side follows by the same factor about the point, so it keeps its place in
+            // the box (mirroring the dragged side recentred the box on the point instead). With
+            // the point on the dragged side's own line that axis can't scale and stays put.
             if mods.alt {
-                if mu.0 {
-                    r[2] = 2.0 * pu - r[0];
+                let about = |r: &mut [f64; 4], lo: usize, hi: usize, c: f64, dragged_lo: bool| {
+                    let (o, x) = if dragged_lo { (0.0, r[lo]) } else { (1.0, r[hi]) };
+                    if (o - c).abs() < 1e-9 {
+                        (r[lo], r[hi]) = (0.0, 1.0);
+                        return;
+                    }
+                    let f = (x - c) / (o - c);
+                    (r[lo], r[hi]) = (c - c * f, c + (1.0 - c) * f);
+                };
+                if mu.0 || mu.1 {
+                    about(&mut r, 0, 2, pu, mu.0);
                 }
-                if mu.1 {
-                    r[0] = 2.0 * pu - r[2];
-                }
-                if mv.0 {
-                    r[3] = 2.0 * pv - r[1];
-                }
-                if mv.1 {
-                    r[1] = 2.0 * pv - r[3];
+                if mv.0 || mv.1 {
+                    about(&mut r, 1, 3, pv, mv.0);
                 }
             }
             // Corners and edges scale proportionally by default; ⇧ frees them (the legacy
@@ -1709,13 +1720,13 @@ pub(crate) fn apply_drag(s: &mut TransformSession, g: Gesture, p: [f64; 2], mods
                 if mu.0 || mu.1 {
                     let k = (r[2] - r[0]).abs();
                     let c = if mods.alt { pv } else { 0.5 };
-                    r[1] = c - k / 2.0;
-                    r[3] = c + k / 2.0;
+                    r[1] = c - c * k;
+                    r[3] = r[1] + k;
                 } else {
                     let k = (r[3] - r[1]).abs();
                     let c = if mods.alt { pu } else { 0.5 };
-                    r[0] = c - k / 2.0;
-                    r[2] = c + k / 2.0;
+                    r[0] = c - c * k;
+                    r[2] = r[0] + k;
                 }
             }
             if corner && !mods.shift {
@@ -1724,14 +1735,14 @@ pub(crate) fn apply_drag(s: &mut TransformSession, g: Gesture, p: [f64; 2], mods
                 let (nx, ny) = (k * sx.signum(), k * sy.signum());
                 let (ax, ay) = if mods.alt { (pu, pv) } else { (if mu.0 { r[2] } else { r[0] }, if mv.0 { r[3] } else { r[1] }) };
                 let fx = if mods.alt {
-                    0.5
+                    pu
                 } else if mu.0 {
                     1.0
                 } else {
                     0.0
                 };
                 let fy = if mods.alt {
-                    0.5
+                    pv
                 } else if mv.0 {
                     1.0
                 } else {
@@ -1948,7 +1959,7 @@ fn near_rotate_corner(t: &TransformSession, p: [f64; 2], tol: f64) -> bool {
     t.warp.is_none()
         && t.mode != TransformMode::Distort
         && {
-            let h = hit(t, p, tol);
+            let h = hit(t, p, tol, false);
             h == Hit::Outside || (t.mode == TransformMode::Rotate && matches!(h, Hit::Corner(_) | Hit::Edge(_)))
         }
         && t.quad.iter().any(|q| (p[0] - q[0]).hypot(p[1] - q[1]) <= tol * 3.0)
@@ -1996,7 +2007,7 @@ fn rotate_dir(t: &TransformSession, pv: Option<&TransformPreview>, p: [f64; 2], 
 
 /// Cursor for hovering a document point while transforming. `quick_split` is Ctrl or Option,
 /// which arms a quick split while a warp is active.
-pub fn cursor(app: &PhotocraftApp, p: [f64; 2], quick_split: bool) -> Option<CursorIcon> {
+pub fn cursor(app: &PhotocraftApp, p: [f64; 2], quick_split: bool, alt: bool) -> Option<CursorIcon> {
     let t = app.ui.transform.as_ref()?;
     let tol = handle_tolerance(app);
     if let Some(w) = &t.warp {
@@ -2014,7 +2025,7 @@ pub fn cursor(app: &PhotocraftApp, p: [f64; 2], quick_split: bool) -> Option<Cur
         }
         return Some(if w.mesh.as_ref().and_then(|m| surface_at(m, p)).is_some() { CursorIcon::Grab } else { CursorIcon::Default });
     }
-    let h = hit(t, p, tol);
+    let h = hit(t, p, tol, alt);
     if !mode_allows(t.mode, h) || (t.content_aware.is_some() && h == Hit::Outside) {
         return Some(CursorIcon::Default);
     }
@@ -2027,7 +2038,9 @@ pub fn cursor(app: &PhotocraftApp, p: [f64; 2], quick_split: bool) -> Option<Cur
         Hit::Corner(_) => CursorIcon::ResizeNeSw,
         Hit::Edge(0 | 2) => CursorIcon::ResizeVertical,
         Hit::Edge(_) => CursorIcon::ResizeHorizontal,
+        // ⌥ over the box: a press places the reference point there.
         Hit::Pivot => CursorIcon::Crosshair,
+        Hit::Inside if alt => CursorIcon::Crosshair,
         Hit::Inside => CursorIcon::Move,
         Hit::Outside => CursorIcon::Alias,
     })
@@ -2124,6 +2137,12 @@ pub fn draw_overlay(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform
         let r = egui::Rect::from_center_size(*p, vec2(7.0, 7.0));
         painter.rect_filled(r, 0.0, Color32::WHITE);
         painter.rect_stroke(r, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Inside);
+    }
+    // While ⌥ is held or the reference point is being dragged, mark the box's centre: the point
+    // snaps there (`snap_ui::box_anchors`), and unlike the corners and edges it has no handle.
+    if pv.gesture.is_some_and(|g| g.hit == Hit::Pivot) || painter.ctx().input(|i| i.modifiers.alt) {
+        let centre = pts[0].lerp(pts[2], 0.5).lerp(pts[1].lerp(pts[3], 0.5), 0.5);
+        painter.circle(centre, 2.5, Color32::WHITE, Stroke::new(1.0, accent));
     }
     // Reference point (Photoshop's crosshair circle).
     let c = scr(t.pivot);
@@ -3362,7 +3381,7 @@ mod tests {
     }
 
     fn drag(s: &mut TransformSession, from: [f64; 2], to: [f64; 2], mods: egui::Modifiers) {
-        let g = Gesture { hit: hit(s, from, 8.0), start: from, quad0: s.quad, pivot0: s.pivot };
+        let g = Gesture { hit: hit(s, from, 8.0, false), start: from, quad0: s.quad, pivot0: s.pivot };
         apply_drag(s, g, to, mods);
     }
 
@@ -3373,7 +3392,7 @@ mod tests {
 
     fn drag_on(mode: TransformMode, type_layer: bool, from: [f64; 2], to: [f64; 2], mods: egui::Modifiers) -> [[f64; 2]; 4] {
         let mut s = session();
-        let g = Gesture { hit: hit(&s, from, 8.0), start: from, quad0: s.quad, pivot0: s.pivot };
+        let g = Gesture { hit: hit(&s, from, 8.0, false), start: from, quad0: s.quad, pivot0: s.pivot };
         apply_mode_drag(&mut s, g, to, mode, type_layer, mods);
         s.quad
     }
@@ -3431,11 +3450,17 @@ mod tests {
         let mut s = session();
         s.quad = corners([0.0, 0.0, 16.0, 16.0]);
         s.pivot = [8.0, 8.0];
-        assert_eq!(hit(&s, [0.0, 0.0], 12.0), Hit::Corner(0));
-        assert_eq!(hit(&s, [16.0, 17.0], 12.0), Hit::Corner(2));
-        assert_eq!(hit(&s, [8.0, -1.0], 12.0), Hit::Edge(0));
-        assert_eq!(hit(&s, [8.0, 8.0], 12.0), Hit::Pivot);
-        assert_eq!(hit(&s, [40.0, 40.0], 12.0), Hit::Outside);
+        assert_eq!(hit(&s, [0.0, 0.0], 12.0, false), Hit::Corner(0));
+        assert_eq!(hit(&s, [16.0, 17.0], 12.0, false), Hit::Corner(2));
+        assert_eq!(hit(&s, [8.0, -1.0], 12.0, false), Hit::Edge(0));
+        assert_ne!(hit(&s, [8.0, 8.0], 12.0, false), Hit::Pivot, "the reference point takes ⌥");
+        assert_eq!(hit(&s, [8.0, 8.0], 12.0, true), Hit::Pivot);
+        assert_eq!(hit(&s, [40.0, 40.0], 12.0, false), Hit::Outside);
+        // On a handle, ⌥ grabs the reference point and a plain press the handle.
+        s.pivot = [0.0, 0.0];
+        assert_eq!(hit(&s, [1.0, 1.0], 12.0, false), Hit::Corner(0));
+        assert_eq!(hit(&s, [1.0, 1.0], 12.0, true), Hit::Pivot);
+        assert_eq!(hit(&s, [16.0, 17.0], 12.0, true), Hit::Corner(2), "⌥ on a handle without it still takes the handle");
     }
 
     #[test]
@@ -3589,6 +3614,40 @@ mod tests {
         let mut s = session();
         drag(&mut s, [100.0, 25.0], [150.0, 25.0], egui::Modifiers { alt: true, shift: true, ..Default::default() });
         assert!(close(s.quad, corners([-50.0, 0.0, 150.0, 50.0])), "{:?}", s.quad);
+    }
+
+    /// ⌥ scales about where the reference point is, not the box's centre: off centre, the box
+    /// keeps the point at the same place within it.
+    #[test]
+    fn alt_scales_about_an_off_centre_reference_point() {
+        let off = |s: &mut TransformSession| s.pivot = [20.0, 10.0];
+        let alt = egui::Modifiers::ALT;
+        // Right edge 100 → 180: twice as wide about x = 20, and twice as tall about y = 10.
+        let mut s = session();
+        off(&mut s);
+        drag(&mut s, [100.0, 25.0], [180.0, 25.0], alt);
+        assert!(close(s.quad, corners([-20.0, -10.0, 180.0, 90.0])), "{:?}", s.quad);
+        assert_eq!(s.pivot, [20.0, 10.0]);
+        // ⌥⇧ on an edge: that axis alone.
+        let mut s = session();
+        off(&mut s);
+        drag(&mut s, [100.0, 25.0], [180.0, 25.0], egui::Modifiers { alt: true, shift: true, ..Default::default() });
+        assert!(close(s.quad, corners([-20.0, 0.0, 180.0, 50.0])), "{:?}", s.quad);
+        // A corner: proportional about the point.
+        let mut s = session();
+        off(&mut s);
+        drag(&mut s, [100.0, 50.0], [140.0, 70.0], alt);
+        assert!(close(s.quad, corners([-10.0, -5.0, 140.0, 70.0])), "{:?}", s.quad);
+        // ⌥⇧ on a corner: each axis by its own factor.
+        let mut s = session();
+        off(&mut s);
+        drag(&mut s, [100.0, 50.0], [180.0, 50.0], egui::Modifiers { alt: true, shift: true, ..Default::default() });
+        assert!(close(s.quad, corners([-20.0, 0.0, 180.0, 50.0])), "{:?}", s.quad);
+        // The point on the dragged edge's line: that axis can't scale about it.
+        let mut s = session();
+        s.pivot = [100.0, 25.0];
+        drag(&mut s, [100.0, 0.0], [150.0, 0.0], egui::Modifiers { alt: true, shift: true, ..Default::default() });
+        assert!(s.quad.iter().flatten().all(|v| v.is_finite()), "{:?}", s.quad);
     }
 
     fn near(a: [f64; 2], b: [f64; 2]) -> bool {
@@ -4080,10 +4139,10 @@ mod tests {
         let tol = handle_tolerance(&app);
         let h = std::f64::consts::FRAC_1_SQRT_2;
         let (tl, br) = ([32.0 - tol * 1.5, 32.0 - tol * 1.5], [160.0 + tol * 1.5, 160.0 + tol * 1.5]);
-        assert_eq!(cursor(&app, tl, false), Some(CursorIcon::None), "the arrow is drawn instead");
+        assert_eq!(cursor(&app, tl, false, false), Some(CursorIcon::None), "the arrow is drawn instead");
         assert!(near2(rotate_cursor_dir(&app, tl), [h, h]), "{:?}", rotate_cursor_dir(&app, tl));
         assert!(near2(rotate_cursor_dir(&app, br), [-h, -h]), "bends round the bottom-right corner");
-        assert_eq!(cursor(&app, [60.0, 60.0], false), Some(CursorIcon::Move));
+        assert_eq!(cursor(&app, [60.0, 60.0], false, false), Some(CursorIcon::Move));
         assert_eq!(rotate_cursor_dir(&app, [60.0, 60.0]), None, "inside moves");
         assert_eq!(rotate_cursor_dir(&app, [32.0, 32.0]), None, "the corner handle scales");
         assert_eq!(rotate_cursor_dir(&app, [f64::NAN, 32.0]), None);

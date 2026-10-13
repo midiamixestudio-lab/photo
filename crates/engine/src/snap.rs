@@ -89,10 +89,19 @@ pub fn layer_rect(doc: &Document, id: LayerId) -> Option<[f64; 4]> {
 }
 
 fn rect_of(doc: &Document, l: &photocraft_doc::Layer) -> Option<[f64; 4]> {
+    snap_rect(l, |l| crate::transform_cmds::transform_bounds(doc, l))
+}
+
+/// A layer's bounds as a snap target: all of its content, whatever is selected.
+fn target_rect(l: &photocraft_doc::Layer) -> Option<[f64; 4]> {
+    snap_rect(l, crate::transform_cmds::whole_bounds)
+}
+
+fn snap_rect(l: &photocraft_doc::Layer, bounds: impl Fn(&photocraft_doc::Layer) -> photocraft_geom::Rect) -> Option<[f64; 4]> {
     if l.is_group() || (matches!(l.content, LayerContent::Adjustment(_)) && l.mask.is_none()) {
         return None;
     }
-    let b = crate::transform_cmds::transform_bounds(doc, l);
+    let b = bounds(l);
     (!b.is_empty()).then_some([b.x0 as f64, b.y0 as f64, b.x1 as f64, b.y1 as f64])
 }
 
@@ -121,7 +130,10 @@ impl SnapTargets {
                 if !l.visible || exclude.contains(&l.id) {
                     continue;
                 }
-                if let Some(r) = rect_of(doc, l) {
+                // Where the layer sits, not its selected part: clipped to the selection, every
+                // layer (the Background too) offered edges along the selection, so whatever moved
+                // from there stuck to where it started.
+                if let Some(r) = target_rect(l) {
                     t.add_rect(r, SnapKind::LayerEdge, SnapKind::LayerCenter);
                 }
             }
@@ -366,5 +378,20 @@ mod tests {
         assert!(!t.x.iter().any(|t| t.kind == SnapKind::Guide || (t.kind == SnapKind::LayerEdge && t.pos == 30.0)));
         assert_eq!(layer_rect(&doc, id), Some([10.0, 20.0, 30.0, 60.0]));
         assert_eq!(union([[0.0, 0.0, 1.0, 1.0], [2.0, -1.0, 3.0, 0.5]]), Some([0.0, -1.0, 3.0, 1.0]));
+    }
+
+    #[test]
+    fn layer_targets_ignore_the_selection() {
+        let mut doc = Document::with_background("s", Size::new(200, 100), ColorMode::Rgb, SampleType::U8, Color::WHITE);
+        let mut sel = photocraft_raster::Surface::new(photocraft_color::PixelFormat::GRAY8);
+        sel.fill_rect(photocraft_geom::Rect::new(40, 20, 90, 60), &[1.0]);
+        doc.selection = Some(sel);
+        let t = SnapTargets::from_document(&doc, &SnapOptions { selection: false, ..SnapOptions::default() }, &[]);
+        // The Background's edges are the canvas's, not the selection's: clipped to it, every layer
+        // offered edges along the selection that a transform of it stuck to.
+        let edges: Vec<f64> = t.x.iter().filter(|t| t.kind == SnapKind::LayerEdge).map(|t| t.pos).collect();
+        assert_eq!(edges, [0.0, 200.0]);
+        // What a move of the layer drags is still its selected part.
+        assert_eq!(layer_rect(&doc, doc.layers[0].id), Some([40.0, 20.0, 90.0, 60.0]));
     }
 }

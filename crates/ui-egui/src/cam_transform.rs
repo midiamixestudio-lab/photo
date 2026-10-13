@@ -154,7 +154,7 @@ pub(crate) fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: Modifiers) -
             if !p.iter().all(|v| v.is_finite()) {
                 return true;
             }
-            let mut h = crate::transform_tool::hit(&t.frame, p, tol);
+            let mut h = crate::transform_tool::hit(&t.frame, p, tol, mods.alt);
             // ⌥-click away from the handles moves the reference point there (and drags it).
             if mods.alt && matches!(h, Hit::Inside | Hit::Outside) {
                 t.frame.pivot = p;
@@ -204,7 +204,10 @@ pub(crate) fn draw(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform)
 pub(crate) fn cursor(app: &PhotocraftApp, ctx: &egui::Context, xf: &ViewXform, p: Pos2) -> Option<CursorIcon> {
     let t = app.ui.cam_transform.as_ref().filter(|_| app.ui.tool == Tool::ContentAwareMove)?;
     let q = t.frame.quad;
-    let h = t.gesture.map_or_else(|| crate::transform_tool::hit(&t.frame, xf.to_doc(p), crate::transform_tool::handle_tolerance(app)), |g| g.hit);
+    let h = t.gesture.map_or_else(
+        || crate::transform_tool::hit(&t.frame, xf.to_doc(p), crate::transform_tool::handle_tolerance(app), ctx.input(|i| i.modifiers.alt)),
+        |g| g.hit,
+    );
     let mid = |i: usize| -> Option<[f64; 2]> {
         let (a, b) = (q.get(i % 4)?, q.get((i + 1) % 4)?);
         Some([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])
