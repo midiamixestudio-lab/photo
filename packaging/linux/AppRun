@@ -14,6 +14,15 @@ set -u
 APPDIR="$(dirname "$(readlink -f "$0")")"
 DESK_ID=ai.storyteller.photocraft
 
+generate_desktop() {
+  # Keep installation and duplicate detection byte-for-byte consistent. This
+  # marker belongs only to AppRun's output, not the shared packaging template.
+  esc="$(printf '%s' "$appimage" | sed 's/[\\&|]/\\&/g')" || return 1
+  sed -e "s|^Exec=.*|Exec=\"$esc\" %F|" -e '/^TryExec=/d' \
+    -e '/^\[Desktop Entry\]$/a\
+X-PhotoCraft-AppImage-Managed=true' "$src_desktop"
+}
+
 integrate() {
   case "${PHOTOCRAFT_NO_DESKTOP_INTEGRATION:-}" in
     1 | true | yes) return 0 ;;
@@ -37,7 +46,8 @@ integrate() {
 
   # If an external AppImage integrator (AppImageLauncher, appimaged, Gear Lever) is
   # already managing this AppImage, do not write a second launcher (#3623); remove our
-  # own if left over from an earlier run, and still install the hicolor icons below.
+  # own only if it is marked and still exactly matches what we would install.
+  # Unknown, customized and symlink launchers are preserved; icons still install.
   apps="$data/applications"
   mkdir -p "$apps" 2>/dev/null || return 0
   external=0
@@ -55,16 +65,22 @@ integrate() {
     done
   fi
   if [ "$external" = 1 ]; then
-    if [ -f "$apps/$DESK_ID.desktop" ]; then
-      rm -f "$apps/$DESK_ID.desktop" 2>/dev/null || true
-      command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
+    desktop="$apps/$DESK_ID.desktop"
+    if [ -f "$desktop" ] && [ ! -L "$desktop" ] &&
+      grep -Fxq 'X-PhotoCraft-AppImage-Managed=true' "$desktop" 2>/dev/null; then
+      if tmp="$(mktemp "$apps/.$DESK_ID.tmp.XXXXXX" 2>/dev/null)"; then
+        if generate_desktop >"$tmp" 2>/dev/null && cmp -s "$tmp" "$desktop" &&
+          [ ! -L "$desktop" ] && rm -f "$desktop" 2>/dev/null; then
+          command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
+        fi
+        rm -f "$tmp" 2>/dev/null || true
+      fi
     fi
   else
     # Rewrite Exec to this AppImage (the binary is not on the host PATH) and drop
     # TryExec, which would hide the entry; everything else is shipped as packaged.
-    tmp="$apps/.$DESK_ID.tmp.$$"
-    esc="$(printf '%s' "$appimage" | sed 's/[\\&|]/\\&/g')"
-    if sed -e "s|^Exec=.*|Exec=\"$esc\" %F|" -e '/^TryExec=/d' "$src_desktop" 2>/dev/null >"$tmp"; then
+    tmp="$(mktemp "$apps/.$DESK_ID.tmp.XXXXXX" 2>/dev/null)" || return 0
+    if generate_desktop >"$tmp" 2>/dev/null; then
       if cmp -s "$tmp" "$apps/$DESK_ID.desktop"; then
         rm -f "$tmp"
       else

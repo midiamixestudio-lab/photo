@@ -200,7 +200,17 @@ Why these formats:
   `~/.local/share/applications/ai.storyteller.photocraft.desktop` with `Exec` rewritten to
   the AppImage's path (`TryExec` dropped, the binary isn't on the host PATH) and the
   hicolor icons beside it, rewriting only when the content changed, and any failure leaves
-  the launch untouched. `PHOTOCRAFT_NO_DESKTOP_INTEGRATION=1` opts out; to uninstall, `rm
+  the launch untouched. AppRun-generated launchers carry
+  `X-PhotoCraft-AppImage-Managed=true`; this marker is absent from the shared packaging
+  template. When an external AppImage integrator is detected, AppRun creates no additional
+  launcher and removes its canonical entry only if it is a regular, non-symlink file
+  with this marker and exactly matches the entry it would generate for the current
+  AppImage. Customized, unmarked and symlink entries are preserved. The comparison
+  happens before deletion and does not synchronize concurrent edits by other processes.
+  Older paths or packaged metadata can also prevent an exact match, so ambiguous
+  existing duplicates may need manual cleanup. This protects duplicate removal; ordinary launcher updates
+  still follow the existing template-replacement behavior (#2905, proposed fix #2929).
+  `PHOTOCRAFT_NO_DESKTOP_INTEGRATION=1` opts out; to uninstall, `rm
   ~/.local/share/applications/ai.storyteller.photocraft.desktop` and `find
   ~/.local/share/icons/hicolor -name 'ai.storyteller.photocraft*' -delete`. The script is
   covered by `packaging/linux/apprun-test.sh` in the packaging-lint workflow.
