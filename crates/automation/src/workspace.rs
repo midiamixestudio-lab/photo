@@ -10,6 +10,7 @@ use photocraft_format::atomic::RenameRetry;
 use serde_json::Value;
 
 use crate::AutomationError;
+use crate::budgets::MAX_OPEN_BYTES;
 
 const DENIED: &str = "automation filesystem access is not granted";
 
@@ -42,14 +43,24 @@ impl AuthorizedWorkspace {
         Ok(Self { read: open_root(read_root, "read")?, write: open_root(write_root, "write")? })
     }
 
-    /// Read one regular file below the configured read root.
+    /// Read one regular file below the configured read root, of at most
+    /// [`MAX_OPEN_BYTES`] bytes.
     pub fn read(&self, path: &str) -> Result<Vec<u8>, AutomationError> {
+        self.read_bounded(path, MAX_OPEN_BYTES)
+    }
+
+    /// [`read`](Self::read) under an explicit byte ceiling, enforced on the read itself: a file
+    /// that grows while open is refused past it too.
+    fn read_bounded(&self, path: &str, max: usize) -> Result<Vec<u8>, AutomationError> {
         let relative = request_path(path, self.read.as_ref())?;
         let root = self.read.as_ref().ok_or_else(|| AutomationError::BadRequest(format!("{DENIED}: read authority is absent")))?;
-        let mut file = root.dir.open(&relative).map_err(|e| file_error("read", path, e))?;
+        let mut file = open_nonblocking(&root.dir, &relative).map_err(|e| file_error("read", path, e))?;
         let metadata = file.metadata().map_err(|e| file_error("read", path, e))?;
         if !metadata.is_file() {
             return Err(AutomationError::BadRequest(format!("automation read path is not a regular file: `{path}`")));
+        }
+        if metadata.len() > max as u64 {
+            return Err(AutomationError::BadRequest(format!("automation read `{path}` exceeds {max} bytes")));
         }
         read_to_observed_length(&mut file, metadata.len())
     }
@@ -223,7 +234,7 @@ struct DirHandle {
 impl photocraft_format::ByteSource for DirHandle {
     fn get(&self, path: &str, max: usize) -> photocraft_format::Result<Vec<u8>> {
         let missing = || photocraft_format::FormatError::Corrupt(format!("missing `{path}`"));
-        let mut file = self.dir.open(path).map_err(|_| missing())?;
+        let mut file = open_nonblocking(&self.dir, Path::new(path)).map_err(|_| missing())?;
         let metadata = file.metadata().map_err(|_| missing())?;
         if !metadata.is_file() {
             // A FIFO or device would block the open and stream without end.
@@ -231,6 +242,20 @@ impl photocraft_format::ByteSource for DirHandle {
         }
         photocraft_format::read_entry(&mut file, metadata.len(), max, path)
     }
+}
+
+/// Open `path` below `dir` for reading without blocking in `open`: a FIFO with no writer would
+/// otherwise hold the request worker there before its file type can be checked. A regular file
+/// reads the same with the flag set.
+fn open_nonblocking(dir: &Dir, path: &Path) -> std::io::Result<cap_std::fs::File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        options.custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32);
+    }
+    dir.open_with(path, &options)
 }
 
 fn file_error(operation: &str, path: &str, error: std::io::Error) -> AutomationError {
@@ -455,6 +480,34 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         let workspace = AuthorizedWorkspace::new(Some(&inside), Some(&inside)).unwrap();
         (inside, outside, workspace)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_below_the_read_root_is_refused_without_blocking() {
+        let (inside, _, workspace) = roots("fifo");
+        std::fs::create_dir(inside.join("native.pcraft")).unwrap();
+        for fifo in ["pipe.psd", "native.pcraft/manifest.json"] {
+            assert!(std::process::Command::new("mkfifo").arg(inside.join(fifo)).status().unwrap().success());
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let w = workspace.clone();
+        std::thread::spawn(move || tx.send((w.read("pipe.psd").map(|_| ()), w.open_pcraft("native.pcraft").map(|_| ()))).unwrap());
+        let (read, open) = rx.recv_timeout(std::time::Duration::from_secs(10)).expect("opening a FIFO must not block the worker");
+        let err = read.unwrap_err().to_string();
+        assert!(err.contains("not a regular file"), "{err}");
+        let err = open.unwrap_err().to_string();
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+
+    #[test]
+    fn reads_are_refused_past_the_byte_ceiling() {
+        let (inside, _, workspace) = roots("ceiling");
+        std::fs::write(inside.join("fits.bin"), [7u8; 16]).unwrap();
+        std::fs::write(inside.join("big.bin"), [7u8; 17]).unwrap();
+        assert_eq!(workspace.read_bounded("fits.bin", 16).unwrap().len(), 16);
+        let err = workspace.read_bounded("big.bin", 16).unwrap_err().to_string();
+        assert!(err.contains("exceeds 16 bytes"), "{err}");
     }
 
     #[test]

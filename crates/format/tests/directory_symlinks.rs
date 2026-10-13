@@ -174,3 +174,60 @@ mod permissions {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+/// A symlinked `tiles/`, manifest or object must not carry the save's writes or stale-object
+/// removal outside the bundle.
+#[cfg(unix)]
+mod symlinks {
+    use super::*;
+    use common::rich_doc;
+    use std::os::unix::fs::symlink;
+    use std::path::Path;
+
+    /// Saves into `bundle` and asserts the save was refused.
+    fn save_refused(bundle: &Path) {
+        let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+        let err = PcraftWriter::new().save_dir(&doc, bundle, &SaveOptions::default()).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
+    }
+
+    #[test]
+    fn a_symlinked_object_directory_refuses_the_save_and_leaves_its_target_alone() {
+        let dir = temp_dir("symlinked-tiles");
+        let (bundle, outside) = (dir.join("doc.pcraft"), dir.join("outside"));
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("sentinel.zst"), b"not ours").unwrap();
+        symlink(&outside, bundle.join("tiles")).unwrap();
+
+        save_refused(&bundle);
+
+        assert_eq!(std::fs::read(outside.join("sentinel.zst")).unwrap(), b"not ours");
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 1, "nothing was written beside the sentinel");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_symlinked_manifest_or_object_refuses_the_save_and_keeps_its_target() {
+        let dir = temp_dir("symlinked-members");
+        let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+        let bundle = dir.join("doc.pcraft");
+        PcraftWriter::new().save_dir(&doc, &bundle, &SaveOptions::default()).unwrap();
+        let victim = dir.join("victim");
+        std::fs::write(&victim, b"keep").unwrap();
+
+        let manifest = bundle.join("manifest.json");
+        std::fs::remove_file(&manifest).unwrap();
+        symlink(&victim, &manifest).unwrap();
+        save_refused(&bundle);
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        std::fs::remove_file(&manifest).unwrap();
+
+        let object = std::fs::read_dir(bundle.join("tiles")).unwrap().next().unwrap().unwrap().path();
+        std::fs::remove_file(&object).unwrap();
+        symlink(&victim, &object).unwrap();
+        save_refused(&bundle);
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

@@ -1,7 +1,7 @@
 //! Shared security primitives for the loopback JSON control transports.
 
 use std::fs::OpenOptions;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -130,8 +130,36 @@ pub fn repeat_auth_reply(line: &str) -> Option<Value> {
     Some(json!({"id": id, "ok": false, "error": "already authenticated"}))
 }
 
+/// Read and validate an existing token file: opened without following a symlink, a regular file,
+/// and on Unix unreadable by group and others, since whoever can read it can drive the control
+/// service. Windows ACLs are not checked.
 fn read_token_file(path: &Path) -> Result<String, AutomationError> {
-    let token = std::fs::read_to_string(path).map_err(|e| AutomationError::Io(format!("{}: {e}", path.display())))?;
+    let io = |e: std::io::Error| AutomationError::Io(format!("{}: {e}", path.display()));
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32);
+    }
+    let file = options.open(path).map_err(io)?;
+    let metadata = file.metadata().map_err(io)?;
+    if !metadata.is_file() {
+        return Err(AutomationError::BadRequest(format!("{}: the control token file must be a regular file", path.display())));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = metadata.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            return Err(AutomationError::BadRequest(format!(
+                "{}: the control token file is readable by other users (mode {mode:o}); run `chmod 600` on it",
+                path.display()
+            )));
+        }
+    }
+    let mut token = String::new();
+    file.take(TOKEN_HEX_LEN as u64 + 16).read_to_string(&mut token).map_err(io)?;
     let token = token.trim().to_owned();
     validate_token(&token)?;
     Ok(token)
@@ -325,6 +353,32 @@ mod tests {
         assert_eq!(server, client);
         assert!(token_matches(&server, &client));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_files_other_users_can_read_or_that_are_not_plain_files_are_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("photocraft-control-token-perms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("token");
+        let token = server_token(None, Some(&path)).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(server_token(None, Some(&path)).unwrap(), token, "a 0600 file is read back");
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let err = server_token(None, Some(&path)).unwrap_err().to_string();
+        assert!(err.contains("readable by other users"), "{err}");
+        assert!(client_token(None, Some(&path)).is_err(), "clients hold the same line");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(server_token(None, Some(&link)).is_err(), "a symlink is not followed");
+        let err = server_token(None, Some(&dir)).unwrap_err().to_string();
+        assert!(err.contains("regular file"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -43,7 +43,15 @@ jobs:
           copyback: false
           prepare: |
             pkg install -y bash git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib
-            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
+            # rustup-init 1.29.1 for x86_64-unknown-freebsd, SHA-256 from its .sha256 on static.rust-lang.org.
+            curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
+              https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-freebsd/rustup-init
+            if [ "$(sha256 -q /tmp/rustup-init)" != af29791be32fd2f926865a983edc97f452078e6d1b4a6037d12ca2f8e67ffa3d ]; then
+              echo 'rustup-init: SHA-256 mismatch' >&2
+              exit 1
+            fi
+            chmod 755 /tmp/rustup-init
+            /tmp/rustup-init -y --profile minimal
           run: |
             set -e
             . "$HOME/.cargo/env"

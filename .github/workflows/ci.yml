@@ -214,6 +214,8 @@ jobs:
     env:
       # Match release.yml so PR results reflect what would actually ship.
       TRUNK_VERSION: 0.21.14
+      # trunk-x86_64-unknown-linux-gnu.tar.gz, from the release's published .sha256 asset.
+      TRUNK_SHA256: f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -226,8 +228,10 @@ jobs:
           cache-on-failure: true
       - name: Install trunk
         run: |
-          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz -C "$HOME/.cargo/bin" trunk
+          curl -fsSL -o "$RUNNER_TEMP/trunk.tar.gz" \
+            "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz"
+          printf '%s  %s\n' "$TRUNK_SHA256" "$RUNNER_TEMP/trunk.tar.gz" | sha256sum -c -
+          tar -xz -C "$HOME/.cargo/bin" -f "$RUNNER_TEMP/trunk.tar.gz" trunk
           trunk --version
       # package.sh runs Trunk's release build, validates relative URLs, checks the 24 MiB
       # wasm limit and exercises the same packaging step used by release.yml.

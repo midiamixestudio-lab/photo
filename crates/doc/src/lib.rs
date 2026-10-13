@@ -850,6 +850,10 @@ pub struct Metadata {
     /// Raw PSD global additional-layer-info blocks: (signature, key, data),
     /// e.g. `lnk2` embedded smart-object files, `Patt` patterns, `Txt2`.
     pub psd_global_blocks: Vec<PsdGlobalBlock>,
+    /// The document entered an untrusted session (one with an authorization gate), whose file
+    /// access is capability-scoped: linked smart-object paths are never read from the ambient
+    /// filesystem, not even by a render or a smart-filter edit. Runtime only, never saved.
+    pub deny_ambient_linked_sources: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

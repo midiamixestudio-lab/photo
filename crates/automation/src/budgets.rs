@@ -17,6 +17,9 @@ pub const MAX_PNG_BYTES: usize = 5 << 20;
 pub const MAX_PREVIEW_SIDE: u32 = 2048;
 /// Maximum source pixels processed by a headless automation preview.
 pub const MAX_RENDER_SOURCE_PIXELS: u64 = 64 << 20;
+/// Maximum bytes of one file an automation session reads whole (`doc.open`). Large PSB files
+/// run to a few gigabytes; past this the read is refused instead of filling memory.
+pub const MAX_OPEN_BYTES: usize = 2 << 30;
 
 fn bad(message: impl Into<String>) -> AutomationError {
     AutomationError::BadRequest(message.into())

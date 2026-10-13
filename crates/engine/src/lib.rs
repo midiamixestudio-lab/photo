@@ -540,6 +540,9 @@ impl Session {
         while self.docs.iter().any(|st| st.doc.id == doc.id) {
             doc.id = photocraft_doc::DocId::fresh();
         }
+        // The gate checks command params; the linked paths a document carries are checked at
+        // read time instead (`smart_cmds::read_file`), including on render jobs with no session.
+        doc.metadata.deny_ambient_linked_sources |= self.authorize.is_some();
         let mut st = DocState::new(doc, path);
         st.history.max_states = self.prefs.get().performance.history_states.max(1) as usize;
         st.history.max_bytes = self.prefs.get().performance.history_budget_bytes();

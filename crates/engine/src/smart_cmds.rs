@@ -77,15 +77,17 @@ fn base_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
-fn read_file(path: &str) -> Option<Vec<u8>> {
-    if path.is_empty() { None } else { photocraft_format::read_file(std::path::Path::new(path)).ok() }
+/// A linked file from the ambient filesystem; `None` when the document forbids that
+/// (`Metadata::deny_ambient_linked_sources`), so an untrusted session sees it as missing.
+fn read_file(meta: &Metadata, path: &str) -> Option<Vec<u8>> {
+    if path.is_empty() || meta.deny_ambient_linked_sources { None } else { photocraft_format::read_file(std::path::Path::new(path)).ok() }
 }
 
 /// The source file of a smart object: embedded bytes, the PSD's embedded linked-layer data (PSD
 /// import keeps the placed layer's uuid as the path), or a linked file on disk.
 pub fn source_bytes(meta: &Metadata, src: &SmartSource) -> Option<(String, Arc<Vec<u8>>)> {
     embedded_source_bytes(meta, src).or_else(|| match src {
-        SmartSource::Linked { path } => read_file(path).map(|b| (base_name(path), Arc::new(b))),
+        SmartSource::Linked { path } => read_file(meta, path).map(|b| (base_name(path), Arc::new(b))),
         SmartSource::Embedded { .. } => None,
     })
 }
@@ -108,7 +110,7 @@ fn authorized_source_bytes(s: &Session, cmd: &str, meta: &Metadata, src: &SmartS
     if let Some(gate) = s.authorize {
         gate(cmd, &json!({"path": path}))?;
     }
-    Ok(read_file(path).map(|b| (base_name(path), Arc::new(b))))
+    Ok(read_file(meta, path).map(|b| (base_name(path), Arc::new(b))))
 }
 
 /// Recheck a source's actual path before an untrusted command reads it: the path lives in the
