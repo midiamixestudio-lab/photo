@@ -3836,3 +3836,7 @@ curves	Smooth	Згладити
 @plural	{n} action|{n} actions	{n} операція|{n} операції|{n} операцій
 	Auto Add/Delete	Автододавання/видалення
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
+	Pasting from other apps is unavailable	Вставлення з інших застосунків недоступне
+	PhotoCraft can't reach the system clipboard in this session. On Wayland, a Flatpak sandbox hides the protocol that images from other apps are read through.	У цьому сеансі PhotoCraft не має доступу до системного буфера обміну. У Wayland пісочниця Flatpak приховує протокол, через який читаються зображення з інших застосунків.
+	To paste from other apps, start PhotoCraft under XWayland: `{command}`	Щоб вставляти з інших застосунків, запустіть PhotoCraft під XWayland: `{command}`
+	Nothing to paste: PhotoCraft can't read the system clipboard here	Нічого вставити: тут PhotoCraft не може прочитати системний буфер обміну
