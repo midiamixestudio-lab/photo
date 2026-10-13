@@ -31,6 +31,7 @@ mod distort;
 mod distort2;
 pub mod erase;
 pub mod exif;
+pub mod faces;
 pub mod features;
 mod fxutil;
 mod gallery;
