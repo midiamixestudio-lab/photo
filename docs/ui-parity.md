@@ -1,6 +1,6 @@
 # UI parity: tools, handles, modifiers and feel
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (on-canvas corner radius widgets, TOOL-214-12; smart filter reordering by drag; smart object perspective row corrected to done, #426; Free Transform H/V skew fields; toolbar tool shortcuts can be reassigned; ⇧-dragged guides land on ruler ticks; layer and selection keys; tool keys; spring-loaded tool letters; type formatting keys; Pen Auto Add/Delete, #4144; smart filter rows) · **Target:** Adobe Photoshop 2026
 
 How PhotoCraft's direct manipulation compares with Photoshop 2026 (27.11.0): the toolbox, the
 handles and modifier keys of each gesture, nudging, snapping, numeric precision, navigation,
@@ -120,7 +120,7 @@ Triangle and Curvature Pen (minus legacy Rounded Rectangle and Targeted Adjustme
 | Handle on the last point, close-drag handle | partial | #1482 |
 | Pen Auto Add/Delete: click a segment of the active path to add, an anchor to delete; ⇧ suspends it | done | #4144 |
 | Path operations in the options bar (combine, subtract, intersect, exclude) | partial | `layer.combineShapes.*`; Pen options #1397 |
-| On-canvas corner-radius handles on live shapes | missing | TOOL-214-12 |
+| On-canvas corner-radius handles on live shapes | done: every selected live rectangle shows a widget at each arc centre with Path Selection, the Rectangle tool and Move with Show Transform Controls; a drag rounds every corner of every selected rectangle to the same radius, ⌥ that corner on each, with the corner radius cursor and an `R:` readout, previewed and committed as one history step (`corner_radius.rs`, `corner_radius_tests.rs`) | TOOL-214-12 |
 | Shape stroke controls (dash, caps, joins, align) | done | TOOL-1053-1, [`shape-strokes.md`](shape-strokes.md) |
 | Rotated shape selection hints correct | partial | #2512 |
 | Curved shape bounds exact | partial | one pixel too wide (#2537) |
@@ -232,3 +232,4 @@ Paragraph; the rest open as in-app floating windows.
 | 2026-10-12 | minor | Smart filter rows can be selected, and dragged (⌥: copied) onto another smart object or onto Delete (#4271) |
 | 2026-10-12 | minor | Free Transform options bar: H and V skew fields; a sheared box reads as skew instead of a taller H |
 | 2026-10-13 | minor | Smart filter rows can be dragged up or down their stack to reorder the filters |
+| 2026-10-13 | minor | On-canvas corner radius widgets on live rectangles (TOOL-214-12) |
