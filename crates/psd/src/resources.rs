@@ -48,15 +48,16 @@ pub struct ImageResource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResolutionInfo {
-    /// Horizontal resolution, 16.16 fixed point (pixels per inch/cm).
+    /// Horizontal resolution, 16.16 fixed point, in pixels per inch whatever `h_res_unit` says.
     pub h_res_fixed: u32,
-    /// 1 = pixels per inch, 2 = pixels per cm.
+    /// The unit Photoshop *displays* the resolution in: 1 = pixels per inch, 2 = pixels per cm.
+    /// The stored value stays pixels per inch (Photoshop writes 300.0 with unit 2 for 300 ppi).
     pub h_res_unit: u16,
     /// Display unit for width (1 in, 2 cm, 3 pt, 4 pica, 5 column).
     pub width_unit: u16,
-    /// Vertical resolution, 16.16 fixed.
+    /// Vertical resolution, 16.16 fixed, in pixels per inch.
     pub v_res_fixed: u32,
-    /// Vertical resolution unit.
+    /// Vertical resolution display unit (as `h_res_unit`).
     pub v_res_unit: u16,
     /// Display unit for height.
     pub height_unit: u16,

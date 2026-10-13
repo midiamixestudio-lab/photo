@@ -673,8 +673,8 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
         match r.id {
             ids::RESOLUTION_INFO => {
                 if let Ok(ri) = photocraft_psd::ResolutionInfo::from_bytes(&r.data) {
-                    let ppi = |res: f64, unit: u16| if unit == 2 { res * 2.54 } else { res };
-                    let (x, y) = (ppi(ri.h_res(), ri.h_res_unit), ppi(ri.v_res(), ri.v_res_unit));
+                    // Pixels per inch whatever the display unit (2 = cm) says (#5201).
+                    let (x, y) = (ri.h_res(), ri.v_res());
                     doc.resolution_dpi = x as f32;
                     warnings.extend(crate::unequal_resolution_warning(x, y));
                 }

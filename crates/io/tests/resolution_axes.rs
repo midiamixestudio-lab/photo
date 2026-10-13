@@ -59,12 +59,13 @@ fn psd_with_equal_axes_opens_silently() {
     let r = import("x.psd", &psd(ResolutionInfo::from_dpi(300.0))).unwrap();
     assert!((r.document.resolution_dpi - 300.0).abs() < 1e-3, "{}", r.document.resolution_dpi);
     assert!(resolution_notes(&r).is_empty(), "{:?}", r.warnings);
-    // Each axis is read in its own unit: 100 pixels per centimetre on both is 254 ppi on both.
-    let mut cm = ResolutionInfo::from_dpi(100.0);
+    // The unit is only how Photoshop displays it: the stored value is pixels per inch either way
+    // (#5201; Photoshop writes 300.0 with unit 2, cm, for a 300 ppi file).
+    let mut cm = ResolutionInfo::from_dpi(300.0);
     cm.h_res_unit = 2;
     cm.v_res_unit = 2;
     let r = import("x.psd", &psd(cm)).unwrap();
-    assert!((r.document.resolution_dpi - 254.0).abs() < 1e-3, "{}", r.document.resolution_dpi);
+    assert!((r.document.resolution_dpi - 300.0).abs() < 1e-3, "{}", r.document.resolution_dpi);
     assert!(resolution_notes(&r).is_empty(), "{:?}", r.warnings);
 }
 

@@ -460,13 +460,14 @@ fn guides_and_alpha_names_roundtrip() {
 }
 
 #[test]
-fn resolution_in_cm_converted() {
+fn resolution_with_cm_display_unit_stays_ppi() {
+    // #5201: hRes is pixels per inch whatever the display unit; 2 (cm) is not a conversion.
     let mut f = testgen::small(Version::Psd, Compression::Raw);
-    let mut ri = photocraft_psd::ResolutionInfo::from_dpi(100.0);
+    let mut ri = photocraft_psd::ResolutionInfo::from_dpi(300.0);
     ri.h_res_unit = 2;
     f.resources[0] = photocraft_psd::ImageResource::new(1005, ri.to_bytes());
     let (d, _) = psd_to_document(&f);
-    assert!((d.resolution_dpi - 254.0).abs() < 1e-3);
+    assert!((d.resolution_dpi - 300.0).abs() < 1e-3, "{}", d.resolution_dpi);
 }
 
 #[test]
