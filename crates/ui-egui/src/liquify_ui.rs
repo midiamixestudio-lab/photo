@@ -574,7 +574,7 @@ fn alt_tool(t: LiquifyTool) -> LiquifyTool {
 
 /// Alt+right-drag, and Control+Alt-drag, change the Liquify brush instead of painting (#4702).
 fn brush_resize_gesture(mods: egui::Modifiers, secondary: bool) -> bool {
-    (secondary && mods.alt) || (mods.ctrl && mods.alt && !secondary)
+    mods.alt && (secondary || mods.ctrl)
 }
 
 /// Horizontal motion sets the diameter (the circle's edge follows the pointer). Vertical motion
@@ -1054,6 +1054,23 @@ fn draw_mesh(d: &LiquifyDialog, painter: &egui::Painter, area: ERect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lint_cleanup_liquify_resize_gesture_accepts_only_the_documented_button_and_modifier_combinations() {
+        for (alt, ctrl, secondary, resize) in [
+            (false, false, false, false),
+            (false, false, true, false),
+            (false, true, false, false),
+            (false, true, true, false),
+            (true, false, false, false),
+            (true, false, true, true),
+            (true, true, false, true),
+            (true, true, true, true),
+        ] {
+            let modifiers = egui::Modifiers { alt, ctrl, ..Default::default() };
+            assert_eq!(brush_resize_gesture(modifiers, secondary), resize, "alt={alt}, ctrl={ctrl}, secondary={secondary}");
+        }
+    }
 
     #[test]
     fn alt_right_drag_resizes_the_liquify_brush_and_does_not_paint() {
