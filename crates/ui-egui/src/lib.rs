@@ -2817,3 +2817,6 @@ mod channel_tint_tests {
         assert_eq!(channel_tint(Rgb, 0, 77, false), Color32::from_gray(77));
     }
 }
+
+#[cfg(test)]
+mod options_hit_area_tests;
