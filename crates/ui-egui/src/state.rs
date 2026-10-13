@@ -456,6 +456,8 @@ pub enum DialogKind {
     Error,
     /// Photoshop Layer Style dialog (see `layer_style.rs`).
     LayerStyle,
+    /// Application update dialog.
+    Update,
 }
 
 /// Per-document view (camera) state.
