@@ -1942,6 +1942,7 @@ fn keyboard_shortcuts(s: &mut Session, p: &Value) -> Result<Value> {
                 "alternates": plan.alternates,
                 "alternateKeys": plan.alternate_keys,
                 "toolKeys": set.tool_keys,
+                "windows": set.windows,
             }));
             let mut with_import = p.clone();
             with_import["set"] = Value::Object(merged);
