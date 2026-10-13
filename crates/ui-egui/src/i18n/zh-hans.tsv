@@ -2738,3 +2738,4 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
+	Show file name in title	标题中显示文件名
