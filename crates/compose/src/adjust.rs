@@ -89,12 +89,12 @@ pub fn apply_depth(adj: &Adjustment, buf: &mut Buffer, transfer: Transfer, depth
         }
         Adjustment::Posterize { levels } => map_rgb(buf, |c| c.map(|v| posterize(v, *levels))),
         Adjustment::BrightnessContrast { brightness, contrast, legacy: true } => {
-            // Legacy: contrast scales around 128/255, with brightness added before it when
-            // contrast is raised and after it when contrast is lowered. Measured on Photoshop
-            // 27.11, brightness +40 with contrast +30 maps 128 to 185 (brightness first), while
-            // the corpus's brightness -23 with contrast -26 (psd-tools) needs contrast first;
-            // contrast 80 keeps 128 at 128 (a 0.5 pivot moved it to 130).
-            let f = legacy_brightness_contrast(*brightness, *contrast);
+            // Legacy: an 8-bit table that scales contrast around level 127, with brightness added
+            // before it when contrast is raised and after it when contrast is lowered (see
+            // `legacy_brightness_contrast`). Measured on Photoshop 27.11, brightness +40 with
+            // contrast +30 maps 128 to 185 (brightness first), while the corpus's brightness -23
+            // with contrast -26 (psd-tools) needs contrast first.
+            let f = legacy_brightness_contrast(*brightness, *contrast, depth);
             map_rgb(buf, |px| px.map(&f))
         }
         Adjustment::BrightnessContrast { brightness, contrast, .. } => {
@@ -239,13 +239,51 @@ pub fn apply_depth(adj: &Adjustment, buf: &mut Buffer, transfer: Transfer, depth
     }
 }
 
-/// Legacy Brightness/Contrast as one channel's tone curve (see [`apply_depth`]).
-fn legacy_brightness_contrast(brightness: f32, contrast: f32) -> impl Fn(f32) -> f32 {
-    let b = brightness / 255.0;
+/// Legacy Brightness/Contrast as one channel's tone curve (see [`apply_depth`]) in a document of
+/// `depth` (`None`: unknown, treated as 8-bit).
+///
+/// Photoshop builds it as a table of the 256 levels, scaling contrast around level 127: with
+/// contrast raised, level `i` maps to `127 + round((i + brightness - 127) · 255 / (255 - L))`,
+/// with it lowered to `127 + round((i - 127) · (255 - L) / 255) + brightness`, rounding halves
+/// away from the pivot, where `L` is |contrast|% of 255, truncated to whole levels at 8 bits.
+/// 16-bit documents keep the fraction but still land on 8-bit levels (values between levels
+/// interpolate); 32-bit evaluates the line itself (and so does Lab16's L, see [`apply_lab`]). That is exact on every level of the
+/// corpus's legacy oracles (photoshop rgb8, gray8, rgb16, gray16, lab8 and lab16 at +25/+30;
+/// psd-tools rgb +20/+57 and grayscale -23/-26), which the old `1 / (1 - c)` slope around 128
+/// left up to 2 levels dark.
+fn legacy_brightness_contrast(brightness: f32, contrast: f32, depth: Option<SampleType>) -> impl Fn(f32) -> f32 {
+    let depth = depth.unwrap_or(SampleType::U8);
+    legacy_brightness_contrast_in(brightness, contrast, depth, depth != SampleType::F32)
+}
+
+/// [`legacy_brightness_contrast`] with its 8-bit table (`table`; values between two levels
+/// interpolate their entries) or the line it samples.
+fn legacy_brightness_contrast_in(brightness: f32, contrast: f32, depth: SampleType, table: bool) -> impl Fn(f32) -> f32 {
+    let (pre, k, post) = legacy_brightness_contrast_line(brightness, contrast, depth);
+    let line = move |i: f32| LEGACY_PIVOT_LEVEL + (i + pre - LEGACY_PIVOT_LEVEL) * k + post;
+    let entry = move |i: f32| LEGACY_PIVOT_LEVEL + ((i + pre - LEGACY_PIVOT_LEVEL) * k).round() + post;
+    move |v: f32| {
+        let x = v * 255.0;
+        let y = if table {
+            let lo = x.floor();
+            let (a, b) = (entry(lo), entry(lo + 1.0));
+            a + (b - a) * (x - lo)
+        } else {
+            line(x)
+        };
+        (y / 255.0).clamp(0.0, 1.0)
+    }
+}
+
+/// Legacy Brightness/Contrast's line in 8-bit levels for a document of `depth`: brightness added
+/// before the contrast scale, the scale around [`LEGACY_PIVOT_LEVEL`], brightness added after it
+/// (one of the two is zero; see [`legacy_brightness_contrast`]).
+pub fn legacy_brightness_contrast_line(brightness: f32, contrast: f32, depth: SampleType) -> (f32, f32, f32) {
     let c = contrast.clamp(-100.0, 99.0);
-    let k = if c >= 0.0 { 1.0 / (1.0 - c / 100.0) } else { 1.0 + c / 100.0 };
-    let (pre, post) = if c >= 0.0 { (b, 0.0) } else { (0.0, b) };
-    move |v: f32| ((v + pre - LEGACY_PIVOT) * k + LEGACY_PIVOT + post).clamp(0.0, 1.0)
+    let l = c.abs() * 255.0 / 100.0;
+    // Whole levels at 8 bits (c·255 is exact for whole-number contrast, so 30 % gives 76).
+    let l = if depth == SampleType::U8 { l.floor() } else { l };
+    if c >= 0.0 { (brightness, 255.0 / (255.0 - l), 0.0) } else { (0.0, (255.0 - l) / 255.0, brightness) }
 }
 
 /// Applies an adjustment in a document of colour `mode`: [`apply_depth`], except that in Lab
@@ -354,8 +392,13 @@ fn apply_lab(adj: &Adjustment, buf: &mut Buffer, depth: Option<SampleType>) {
             map_rgb(buf, |c| [if (lab_norm(c)[0].clamp(0.0, 1.0) * 255.0).round() >= t { 1.0 } else { 0.0 }; 3])
         }
         Adjustment::BrightnessContrast { brightness, contrast, legacy } => {
-            let legacy_curve = legacy_brightness_contrast(*brightness, *contrast);
-            let curve = |v: f32| if *legacy { legacy_curve(v) } else { modern_contrast(modern_brightness(v, *brightness), *contrast).clamp(0.0, 1.0) };
+            // Legacy on L: the 8-bit table on Lab8's L byte, the line itself in Lab16 (every L of
+            // the photoshop corpus's lab8 and lab16 legacy oracles, evaluated on the stored Lab).
+            let depth = depth.unwrap_or(SampleType::U8);
+            let byte = depth == SampleType::U8;
+            let legacy_curve = legacy_brightness_contrast_in(*brightness, *contrast, depth, byte);
+            let legacy_l = |v: f32| legacy_curve(if byte { (v * 255.0).round() / 255.0 } else { v });
+            let curve = |v: f32| if *legacy { legacy_l(v) } else { modern_contrast(modern_brightness(v, *brightness), *contrast).clamp(0.0, 1.0) };
             // The tone curve on L only. Added as the difference of two round trips (like
             // `tone_in_space`) so a and b, and colours a round trip moves, stay put.
             map_rgb(buf, |c| {
@@ -1177,18 +1220,19 @@ mod tone_tests {
     }
 
     /// Photoshop 27.11, measured: Brightness/Contrast with Use Legacy on, over a gray ramp
-    /// (x = 0, 16, …, 240, 255), one row per (brightness, contrast).
+    /// (x = 0, 16, …, 240, 255), one row per (brightness, contrast). A contrast 80 row (128 kept
+    /// at 128) is left out: it disagrees with every level of the corpus's legacy oracles, which
+    /// pivot on 127 (see `legacy_brightness_contrast_is_photoshops_table`).
     #[test]
     fn legacy_brightness_contrast_matches_photoshop() {
         const X: [u8; 17] = [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255];
-        let measured: [(f32, f32, [u8; 17]); 7] = [
+        let measured: [(f32, f32, [u8; 17]); 6] = [
             (40.0, 0.0, [40, 56, 72, 88, 104, 120, 136, 152, 168, 184, 200, 216, 232, 248, 255, 255, 255]),
             (-40.0, 0.0, [0, 0, 0, 8, 24, 40, 56, 72, 88, 104, 120, 136, 152, 168, 184, 200, 215]),
             (0.0, 30.0, [0, 0, 0, 14, 37, 60, 82, 105, 128, 151, 174, 196, 219, 242, 255, 255, 255]),
             (0.0, -30.0, [38, 49, 61, 72, 83, 94, 106, 117, 128, 139, 150, 162, 173, 184, 195, 207, 217]),
             (40.0, 30.0, [3, 25, 48, 71, 94, 117, 139, 162, 185, 208, 231, 253, 255, 255, 255, 255, 255]),
             (100.0, 0.0, [100, 116, 132, 148, 164, 180, 196, 212, 228, 244, 255, 255, 255, 255, 255, 255, 255]),
-            (0.0, 80.0, [0, 0, 0, 0, 0, 0, 0, 48, 128, 208, 255, 255, 255, 255, 255, 255, 255]),
         ];
         for (brightness, contrast, want) in measured {
             let rect = Rect::new(0, 0, 17, 1);
@@ -1198,6 +1242,46 @@ mod tone_tests {
             for (i, (p, w)) in b.px.iter().zip(want).enumerate() {
                 let got = (p[0] * 255.0).round() as i32;
                 assert!((got - i32::from(w)).abs() <= 1, "b {brightness} c {contrast} at {}: {got} vs Photoshop {w}", X[i]);
+            }
+        }
+    }
+
+    /// Level → Photoshop's level, read off the corpus's Photoshop-authored legacy oracles: photoshop
+    /// rgb8, gray8, rgb16 and gray16 brightness-contrast-legacy.psd at +25/+30 (16 bits keeps the
+    /// fraction of 30 % of 255: 19 gives 8 there, 9 at 8 bits), psd-tools
+    /// brightnesscontrast_legacy_rgb.psd at +20/+57 (96 and 118 are ties, rounded away from the
+    /// pivot) and brightnesscontrast_legacy_grayscale.psd at -23/-26, all 8-bit.
+    #[test]
+    fn legacy_brightness_contrast_is_photoshops_table() {
+        // (depth, brightness, contrast, levels in, Photoshop's levels out)
+        type Oracle = (SampleType, f32, f32, &'static [u8], &'static [u8]);
+        let oracles: [Oracle; 4] = [
+            (
+                SampleType::U8,
+                25.0,
+                30.0,
+                &[14, 15, 19, 21, 30, 44, 60, 82, 104, 122, 127, 146, 157, 164, 178, 185],
+                &[2, 3, 9, 12, 24, 44, 67, 99, 130, 155, 163, 190, 205, 215, 235, 245],
+            ),
+            (SampleType::U16, 25.0, 30.0, &[14, 15, 19, 21, 26, 33, 82, 127, 190, 255], &[1, 3, 8, 11, 18, 28, 98, 163, 253, 255]),
+            (
+                SampleType::U8,
+                20.0,
+                57.0,
+                &[53, 62, 71, 80, 89, 96, 107, 118, 125, 143, 152, 161, 162],
+                &[2, 23, 44, 64, 85, 101, 127, 153, 169, 210, 231, 252, 255],
+            ),
+            (SampleType::U8, -23.0, -26.0, &[3, 17, 21, 48, 75, 102, 129, 152, 179, 219], &[12, 22, 25, 45, 65, 85, 105, 123, 143, 172]),
+        ];
+        for (depth, brightness, contrast, xs, want) in oracles {
+            let adj = Adjustment::BrightnessContrast { brightness, contrast, legacy: true };
+            let rect = Rect::new(0, 0, xs.len() as i32, 1);
+            let px = xs.iter().map(|&x| f32::from(x) / 255.0).map(|v| [v, v, v, 1.0]).collect();
+            let mut b = Buffer { rect, px };
+            apply_depth(&adj, &mut b, Transfer::Srgb, Some(depth));
+            for ((p, x), w) in b.px.iter().zip(xs).zip(want) {
+                // On 8-bit levels at 16 bits too, as in Photoshop's rgb16 oracle.
+                assert!((p[0] * 255.0 - f32::from(*w)).abs() < 1e-3, "{brightness}/{contrast} {depth:?} at {x}: {}", p[0] * 255.0);
             }
         }
     }
@@ -1632,6 +1716,31 @@ mod tone_tests {
         }
     }
 
+    /// Stored L in → Photoshop's L out, from the photoshop corpus's lab8 (bytes) and lab16 (file
+    /// units of 65535) brightness-contrast-legacy.psd, +25/+30: the 8-bit table in Lab8, the line
+    /// itself in Lab16.
+    #[test]
+    fn lab_legacy_brightness_contrast_matches_photoshop() {
+        // (depth, full scale, stored L in, Photoshop's L out)
+        type Oracle = (SampleType, f32, &'static [u16], &'static [u16]);
+        let oracles: [Oracle; 2] = [
+            (SampleType::U8, 255.0, &[24, 39, 55, 81, 101, 126, 147, 172, 182], &[16, 37, 60, 97, 126, 161, 191, 227, 241]),
+            (SampleType::U16, 65535.0, &[6168, 10024, 18248, 25958, 32382, 40091, 46773], &[4004, 9512, 21260, 32274, 41451, 52465, 62011]),
+        ];
+        let adj = Adjustment::BrightnessContrast { brightness: 25.0, contrast: 30.0, legacy: true };
+        for (depth, full, ls, want) in oracles {
+            for (&lin, &lout) in ls.iter().zip(want) {
+                let mut b = Buffer::filled(crate::Rect::new(0, 0, 1, 1), [0.0; 4]);
+                let c = lab(f32::from(lin) / full * 100.0, 0.0, 0.0);
+                b.px[0] = [c[0], c[1], c[2], 1.0];
+                apply_in(&adj, &mut b, Transfer::Srgb, Some(depth), ColorMode::Lab);
+                let got = srgb_to_lab([b.px[0][0], b.px[0][1], b.px[0][2]])[0] / 100.0 * full;
+                // Within a twentieth of an 8-bit level.
+                assert!((got - f32::from(lout)).abs() <= full / 255.0 / 20.0, "{depth:?} L {lin}: {got} vs Photoshop {lout}");
+            }
+        }
+    }
+
     #[test]
     fn lab_gradient_map_follows_l() {
         let stops = vec![(0.0, [1.0, 0.0, 0.0]), (1.0, [0.0, 0.0, 1.0])];
@@ -1675,9 +1784,9 @@ mod tone_tests {
     }
 }
 
-/// Legacy Brightness/Contrast scales contrast around 128 of 255 (contrast 80 keeps 128 at 128,
-/// measured on Photoshop 27.11; a 0.5 pivot moved it to 130).
-pub const LEGACY_PIVOT: f32 = 128.0 / 255.0;
+/// The level legacy Brightness/Contrast scales contrast around: 127 of 255 (exact on the
+/// corpus's legacy oracles, see [`legacy_brightness_contrast`]; 128 left them up to 2 levels dark).
+pub const LEGACY_PIVOT_LEVEL: f32 = 127.0;
 
 #[cfg(test)]
 mod lut3d_guard_tests {

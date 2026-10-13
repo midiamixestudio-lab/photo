@@ -616,7 +616,19 @@ fn adjust(c: vec3<f32>) -> vec3<f32> {
             return vec3(select(0.0, 1.0, round_half_up(gray(c) * 255.0) >= p0.x));
         }
         case 3: { return vec3(posterize(c.r, p0.x), posterize(c.g, p0.x), posterize(c.b, p0.x)); }
-        case 4: { return clamp((c + p0.x - p0.z) * p0.y + p0.z + p0.w, vec3(0.0), vec3(1.0)); }   // B/C legacy: brightness before (p0.x) or after (p0.w) contrast around compose::adjust::LEGACY_PIVOT (p0.z)
+        case 4: {                                                              // B/C legacy (compose::adjust::legacy_brightness_contrast)
+            // In 8-bit levels: brightness before (p0.x) or after (p0.w) contrast p0.y around
+            // level p0.z; p1.x = 1 looks up the 8-bit table (whole levels, halves away from the
+            // pivot), interpolating between two levels' entries.
+            let x = c * 255.0;
+            if p1.x < 0.5 { return clamp((p0.z + (x + p0.x - p0.z) * p0.y + p0.w) / 255.0, vec3(0.0), vec3(1.0)); }
+            let lo = floor(x);
+            let d0 = (lo + p0.x - p0.z) * p0.y;
+            let d1 = (lo + 1.0 + p0.x - p0.z) * p0.y;
+            let e0 = sign(d0) * floor(abs(d0) + 0.5);
+            let e1 = sign(d1) * floor(abs(d1) + 0.5);
+            return clamp((p0.z + mix(e0, e1, x - lo) + p0.w) / 255.0, vec3(0.0), vec3(1.0));
+        }
         case 5: {                                                              // B/C modern
             let b = p0.x; let ct = p0.y;
             return vec3(mcontrast(mbright(c.r, b), ct), mcontrast(mbright(c.g, b), ct), mcontrast(mbright(c.b, b), ct));
