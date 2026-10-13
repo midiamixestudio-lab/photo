@@ -2745,5 +2745,7 @@ curves	Smooth	平滑
 	Action playback stopped	动作播放已停止
 	Step {step} is waiting for its dialog	步骤 {step} 正在等待其对话框
 @plural	{n} action|{n} actions	{n} 个动作
+# Batch / Image Processor
+	Include All Subfolders	包含所有子文件夹
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
