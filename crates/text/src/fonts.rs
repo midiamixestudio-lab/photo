@@ -1,6 +1,6 @@
 //! Font database: bundled fonts (always available, also on the web), the optional craft-fonts
-//! Japanese fonts ([`crate::craft_fonts`], when built with `CRAFT_FONTS_DIR`), optional system
-//! fonts found by scanning platform directories (plus Fontconfig's file list on Linux),
+//! Japanese and Arabic fonts ([`crate::craft_fonts`], when built with `CRAFT_FONTS_DIR`), optional
+//! system fonts found by scanning platform directories (plus Fontconfig's file list on Linux),
 //! user-registered font data, and PostScript-name lookup for PSD import.
 
 use std::collections::HashMap;
@@ -208,6 +208,19 @@ impl Default for FontDb {
 impl FontDb {
     /// Bundled fonts only (deterministic: used by tests and the web build).
     pub fn new() -> Self {
+        let mut db = Self::bundled();
+        // The optional craft-fonts (empty unless built with CRAFT_FONTS_DIR; always empty on
+        // wasm32), before any system font.
+        for f in crate::craft_fonts::CRAFT_FONTS.iter().filter(|f| f.is_japanese() || f.is_arabic()) {
+            db.register_static_font(f.bytes);
+        }
+        db.refresh_generics();
+        db
+    }
+
+    /// The bundled fonts without the craft-fonts, as the web build has them (wasm32 never embeds
+    /// craft-fonts). Generic families and the fallback stack are not set up yet.
+    pub(crate) fn bundled() -> Self {
         let collection = Collection::new(CollectionOptions { shared: false, system_fonts: false });
         let mut db = FontDb {
             fcx: FontContext { collection, source_cache: SourceCache::default() },
@@ -222,12 +235,6 @@ impl FontDb {
         for (_, bytes) in BUNDLED {
             db.register_static_font(bytes.as_slice());
         }
-        // The optional craft-fonts (empty unless built with CRAFT_FONTS_DIR; always empty on
-        // wasm32), before any system font.
-        for f in crate::craft_fonts::CRAFT_FONTS.iter().filter(|f| f.is_japanese()) {
-            db.register_static_font(f.bytes);
-        }
-        db.refresh_generics();
         db
     }
 
