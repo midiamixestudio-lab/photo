@@ -75,7 +75,9 @@ fn document_physical_size(h: &mut Harness) -> (i64, i64) {
     let r = h.state().last_canvas_rect;
     let cx = ((r.center().x * ppp) as u32).min(w - 1);
     let cy = ((r.center().y * ppp) as u32).min(height - 1);
-    let on_doc = |x: u32, y: u32| at(x, y) < 12;
+    // The standard dark chrome is near-black (#0a0a0c); count only the black
+    // document pixels so a neighboring UI surface cannot widen the measurement.
+    let on_doc = |x: u32, y: u32| at(x, y) < 6;
     let (_, dw) = longest_run((0..w).map(|x| on_doc(x, cy)));
     let (_, dh) = longest_run((0..height).map(|y| on_doc(cx, y)));
     (dw as i64, dh as i64)

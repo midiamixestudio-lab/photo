@@ -25,10 +25,10 @@ use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeKind {
-    /// Photoshop-style Spectrum dark: flat charcoal panels, tab strips, blue accents (darkest brightness).
-    Pro,
-    /// Photoshop's default (second) interface brightness: #535353 panels, #282828 canvas (default).
+    /// Standard ArtCraft dark UI in the Pro layout.
     #[default]
+    Pro,
+    /// Photoshop's second interface brightness: #535353 panels, #282828 canvas.
     ProMedium,
     /// Photoshop's third interface brightness: #B8B8B8 panels (#2661).
     ProLightGray,
@@ -203,6 +203,36 @@ impl Tokens {
     }
 
     pub fn for_kind(kind: ThemeKind) -> Self {
+        let mut t = Self::original_for_kind(kind);
+        if kind == ThemeKind::Pro {
+            // ArtCraft's first-party dark UI roles. Apply after choosing the preset,
+            // leaving the measured Pro brightness levels and named themes intact.
+            let hex = |s: u32| Color32::from_rgb((s >> 16) as u8, (s >> 8) as u8, s as u8);
+            t.chrome = hex(0x0a0a0c);
+            t.dock = hex(0x121316);
+            t.card = hex(0x101014);
+            t.card_border = hex(0x36373a);
+            t.field = hex(0x060607);
+            t.field_border = hex(0x36373a);
+            t.hover = hex(0x323337);
+            t.pressed = hex(0x414246);
+            t.text = hex(0xf2f1ee);
+            t.text_dim = hex(0xa6a6a8);
+            t.text_faint = hex(0x717176);
+            t.icon = hex(0xf2f1ee);
+            t.accent = hex(0x2d81ff);
+            t.accent_soft = hex(0x203b65);
+            t.accent_border = hex(0x74aaff);
+            t.separator = hex(0x36373a);
+            t.primary_bg = hex(0x2d81ff);
+            t.primary_text = hex(0x060607);
+            t.tab_strip = hex(0x0a0a0c);
+            t.row_selected = hex(0x203b65);
+        }
+        t
+    }
+
+    fn original_for_kind(kind: ThemeKind) -> Self {
         match kind {
             // Sampled from Photoshop 2026's default brightness (raw display values).
             ThemeKind::ProMedium => Tokens {
@@ -223,7 +253,7 @@ impl Tokens {
                 separator: Color32::from_rgb(62, 62, 62),
                 tab_strip: Color32::from_rgb(74, 74, 74),
                 row_selected: Color32::from_rgb(107, 107, 107),
-                ..Tokens::for_kind(ThemeKind::Pro)
+                ..Tokens::original_for_kind(ThemeKind::Pro)
             },
             // Photoshop's medium-light brightness: #B8B8B8 panels, dark text, a mid-grey canvas.
             ThemeKind::ProLightGray => Tokens {
@@ -248,7 +278,7 @@ impl Tokens {
                 shadow: Color32::from_black_alpha(70),
                 tab_strip: Color32::from_rgb(170, 170, 170),
                 row_selected: Color32::from_rgb(212, 212, 212),
-                ..Tokens::for_kind(ThemeKind::Pro)
+                ..Tokens::original_for_kind(ThemeKind::Pro)
             },
             // Photoshop's lightest brightness: #F0F0F0 panels, dark text, a light-grey canvas.
             ThemeKind::ProLight => Tokens {
@@ -273,7 +303,7 @@ impl Tokens {
                 shadow: Color32::from_black_alpha(50),
                 tab_strip: Color32::from_rgb(226, 226, 226),
                 row_selected: Color32::from_rgb(204, 204, 204),
-                ..Tokens::for_kind(ThemeKind::Pro)
+                ..Tokens::original_for_kind(ThemeKind::Pro)
             },
             ThemeKind::Pro => Tokens {
                 kind,
@@ -992,8 +1022,14 @@ pub fn apply(ctx: &egui::Context, kind: ThemeKind) {
     v.menu_corner_radius = CornerRadius::same(t.radius as u8);
     v.window_shadow = egui::Shadow { offset: [0, 10], blur: 32, spread: 0, color: t.shadow };
     v.popup_shadow = egui::Shadow { offset: [0, 6], blur: 20, spread: 0, color: t.shadow };
-    v.selection.bg_fill = if t.bevel || t.pro { t.accent } else { t.accent_soft };
-    v.selection.stroke = Stroke::new(1.0, t.accent_text);
+    v.selection.bg_fill = if kind == ThemeKind::Pro {
+        t.row_selected
+    } else if t.bevel || t.pro {
+        t.accent
+    } else {
+        t.accent_soft
+    };
+    v.selection.stroke = Stroke::new(1.0, if kind == ThemeKind::Pro { t.text } else { t.accent_text });
     v.slider_trailing_fill = true;
     v.handle_shape = egui::style::HandleShape::Circle;
     v.striped = false;
@@ -1070,6 +1106,21 @@ pub fn canvas_bg(t: &Tokens) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pro_dark_uses_artcraft_roles_without_recoloring_other_pro_levels() {
+        let dark = Tokens::for_kind(ThemeKind::Pro);
+        assert_eq!(dark.chrome, Color32::from_rgb(10, 10, 12));
+        assert_eq!(dark.card, Color32::from_rgb(16, 16, 20));
+        assert_eq!(dark.field, Color32::from_rgb(6, 6, 7));
+        assert_eq!(dark.text, Color32::from_rgb(242, 241, 238));
+        assert_eq!(dark.accent, Color32::from_rgb(45, 129, 255));
+        assert_eq!(dark.row_selected, Color32::from_rgb(32, 59, 101));
+        let medium = Tokens::for_kind(ThemeKind::ProMedium);
+        assert_eq!(medium.card, Color32::from_rgb(83, 83, 83));
+        assert_eq!(medium.accent, Color32::from_rgb(55, 142, 240));
+        assert_eq!(Tokens::for_kind(ThemeKind::ProLight).accent_text, Color32::from_rgb(16, 98, 196));
+    }
 
     fn text_sizes(ctx: &egui::Context) -> Vec<egui::Vec2> {
         let mut sizes = Vec::new();
