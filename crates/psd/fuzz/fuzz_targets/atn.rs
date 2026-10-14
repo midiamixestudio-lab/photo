@@ -6,6 +6,7 @@ use libfuzzer_sys::fuzz_target;
 use photocraft_psd::atn;
 
 fuzz_target!(|data: &[u8]| {
+    let _ = atn::parse_bounded(data);
     if let Ok(f) = atn::parse(data) {
         let bytes = atn::write(&f).expect("a parsed set is writable");
         let again = atn::parse(&bytes).expect("a written set parses");

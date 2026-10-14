@@ -30,6 +30,10 @@ use crate::io::{Reader, WriteExt};
 
 /// The only version this module reads and writes (Photoshop 6 and every later release).
 pub const VERSION: u32 = 16;
+/// Input size ceiling used by conservative action import.
+pub const MAX_BYTES: usize = 32 << 20;
+const BOUNDED_MAX_ITEMS: usize = 10_000;
+const BOUNDED_MAX_NAME_UNITS: u32 = 1024;
 /// Most actions read from one set (Photoshop's own sets hold a few dozen).
 pub const MAX_ACTIONS: usize = 10_000;
 /// Most steps read from one action.
@@ -132,9 +136,19 @@ impl AtnEvent {
 }
 
 /// Reads a u32 length + ASCII bytes (event and dictionary names).
-fn read_ascii(r: &mut Reader<'_>) -> Result<String> {
+fn read_ascii(r: &mut Reader<'_>, limit: Option<u32>) -> Result<String> {
     let n = r.u32()?;
+    if limit.is_some_and(|limit| n > limit) {
+        return Err(PsdError::LimitExceeded("action event or step label is too long"));
+    }
     Ok(String::from_utf8_lossy(r.bytes_u64(u64::from(n))?).into_owned())
+}
+
+fn read_name(r: &mut Reader<'_>, bounded: bool) -> Result<UnicodeString> {
+    if bounded && r.clone().u32()? > BOUNDED_MAX_NAME_UNITS {
+        return Err(PsdError::LimitExceeded("action names exceed 1024 UTF-16 units"));
+    }
+    UnicodeString::read(r)
 }
 
 fn write_ascii(out: &mut Vec<u8>, s: &str) -> Result<()> {
@@ -144,17 +158,17 @@ fn write_ascii(out: &mut Vec<u8>, s: &str) -> Result<()> {
     Ok(())
 }
 
-fn read_item(r: &mut Reader<'_>) -> Result<AtnItem> {
+fn read_item(r: &mut Reader<'_>, bounded: bool) -> Result<AtnItem> {
     let expanded = r.u8()? != 0;
     let enabled = r.u8()? != 0;
     let with_dialog = r.u8()? != 0;
     let dialog_options = r.u8()?;
     let event = match &r.array::<4>()? {
-        b"TEXT" => AtnEvent::Name(read_ascii(r)?),
+        b"TEXT" => AtnEvent::Name(read_ascii(r, bounded.then_some(256))?),
         b"long" => AtnEvent::Code(r.array()?),
         other => return Err(PsdError::invalid(format!("unknown event kind {:?}", String::from_utf8_lossy(other)))),
     };
-    let dictionary = read_ascii(r)?;
+    let dictionary = read_ascii(r, bounded.then_some(4096))?;
     let descriptor = match r.i32()? {
         0 => None,
         -1 => Some(Descriptor::read(r)?),
@@ -163,12 +177,12 @@ fn read_item(r: &mut Reader<'_>) -> Result<AtnItem> {
     Ok(AtnItem { expanded, enabled, with_dialog, dialog_options, event, dictionary, descriptor })
 }
 
-fn read_action(r: &mut Reader<'_>) -> Result<AtnAction> {
+fn read_action(r: &mut Reader<'_>, bounded: bool, total: &mut usize) -> Result<AtnAction> {
     let function_key = r.u16()?;
     let shift = r.u8()? != 0;
     let command = r.u8()? != 0;
     let color = r.u16()?;
-    let name = UnicodeString::read(r)?;
+    let name = read_name(r, bounded)?;
     let expanded = r.u8()? != 0;
     let n = r.u32()?;
     // Each item needs at least its 4 flags, the event kind, two empty names and the descriptor flag.
@@ -176,21 +190,39 @@ fn read_action(r: &mut Reader<'_>) -> Result<AtnAction> {
     if n as usize > MAX_ITEMS {
         return Err(PsdError::LimitExceeded("too many steps in one action"));
     }
+    *total = total.saturating_add(n as usize);
+    if bounded && *total > BOUNDED_MAX_ITEMS {
+        return Err(PsdError::LimitExceeded("action set exceeds 10000 steps"));
+    }
     let mut items = Vec::with_capacity((n as usize).min(1024));
     for _ in 0..n {
-        items.push(read_item(r)?);
+        items.push(read_item(r, bounded)?);
     }
     Ok(AtnAction { function_key, shift, command, color, name, expanded, items })
 }
 
 /// Parses an `.atn` file.
 pub fn parse(data: &[u8]) -> Result<AtnFile> {
+    parse_impl(data, false)
+}
+
+/// Parse a complete set for conservative migration, with bounded input, names, identifiers
+/// and total steps. Unlike [`parse`], trailing bytes are rejected rather than warned about.
+/// The lossless reader/writer and the conservative importer share the same format parser.
+pub fn parse_bounded(data: &[u8]) -> Result<AtnFile> {
+    if data.len() > MAX_BYTES {
+        return Err(PsdError::LimitExceeded("action file exceeds 32 MiB"));
+    }
+    parse_impl(data, true)
+}
+
+fn parse_impl(data: &[u8], bounded: bool) -> Result<AtnFile> {
     let mut r = Reader::new(data);
     let version = r.u32()?;
     if version != VERSION {
         return Err(PsdError::Unsupported(format!("actions file version {version} (only version 16, Photoshop 6 and later, is supported)")));
     }
-    let name = UnicodeString::read(&mut r)?;
+    let name = read_name(&mut r, bounded)?;
     let expanded = r.u8()? != 0;
     let n = r.u32()?;
     // Each action needs at least its key, modifiers, colour, an empty name, the flag and a count.
@@ -199,11 +231,15 @@ pub fn parse(data: &[u8]) -> Result<AtnFile> {
         return Err(PsdError::LimitExceeded("too many actions in one set"));
     }
     let mut actions = Vec::with_capacity((n as usize).min(256));
+    let mut total = 0usize;
     for _ in 0..n {
-        actions.push(read_action(&mut r)?);
+        actions.push(read_action(&mut r, bounded, &mut total)?);
     }
     let mut warnings = Vec::new();
     if !r.is_empty() {
+        if bounded {
+            return Err(PsdError::invalid("trailing bytes after action set"));
+        }
         warnings.push(format!("{} trailing bytes ignored", r.remaining()));
     }
     Ok(AtnFile { name, expanded, actions, warnings })
@@ -422,5 +458,115 @@ mod tests {
             }
             let _ = parse(&bytes);
         }
+    }
+}
+
+#[cfg(test)]
+mod bounded_tests {
+    use super::*;
+    use crate::descriptor::Value;
+
+    fn text(out: &mut Vec<u8>, s: &str) {
+        out.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    fn unicode(out: &mut Vec<u8>, s: &str) {
+        UnicodeString::new(s).write(out);
+    }
+
+    fn sample() -> Vec<u8> {
+        let mut out = 16u32.to_be_bytes().to_vec();
+        unicode(&mut out, "Studio 🎨");
+        out.push(1);
+        out.extend_from_slice(&1u32.to_be_bytes());
+        out.extend_from_slice(&[0; 6]);
+        unicode(&mut out, "Blur");
+        out.push(1);
+        out.extend_from_slice(&2u32.to_be_bytes());
+        out.extend_from_slice(&[0, 1, 0, 2]);
+        out.extend_from_slice(b"TEXT");
+        text(&mut out, "gaussianBlur");
+        text(&mut out, "Gaussian Blur");
+        out.extend_from_slice(&u32::MAX.to_be_bytes());
+        out.extend_from_slice(&Descriptor::new("GsnB").with("Rds ", Value::UnitFloat { unit: *b"#Pxl", value: 2.5 }).to_bytes());
+        out.extend_from_slice(&[0, 0, 1, 2]);
+        out.extend_from_slice(b"longInvr");
+        text(&mut out, "Invert");
+        out.extend_from_slice(&0u32.to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn bounded_import_limits_do_not_change_lossless_parsing() {
+        let item = AtnItem { event: AtnEvent::Name("invert".into()), ..Default::default() };
+        let mut file = AtnFile {
+            name: UnicodeString::new("Set"),
+            actions: vec![AtnAction { name: UnicodeString::new("Action"), items: vec![item.clone(); BOUNDED_MAX_ITEMS], ..Default::default() }],
+            ..Default::default()
+        };
+        let bytes = write(&file).unwrap();
+        assert!(parse_bounded(&bytes).is_ok());
+        file.actions.push(AtnAction { name: UnicodeString::new("Another"), items: vec![item], ..Default::default() });
+        let bytes = write(&file).unwrap();
+        assert!(matches!(parse_bounded(&bytes), Err(PsdError::LimitExceeded(_))));
+        assert_eq!(parse(&bytes).unwrap().actions, file.actions);
+        file.actions.truncate(1);
+        file.actions[0].items = vec![AtnItem { event: AtnEvent::Name("x".repeat(257)), ..Default::default() }];
+        let bytes = write(&file).unwrap();
+        assert!(matches!(parse_bounded(&bytes), Err(PsdError::LimitExceeded(_))));
+        assert_eq!(parse(&bytes).unwrap().actions, file.actions);
+    }
+
+    #[test]
+    fn oversized_names_are_rejected_before_allocating() {
+        let mut bytes = 16u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&(BOUNDED_MAX_NAME_UNITS + 1).to_be_bytes());
+        assert!(matches!(parse_bounded(&bytes), Err(PsdError::LimitExceeded(_))));
+    }
+
+    #[test]
+    fn reads_names_events_descriptors_and_flags() {
+        let set = parse_bounded(&sample()).unwrap();
+        assert_eq!(set.name.to_string_lossy(), "Studio 🎨");
+        assert_eq!(set.actions[0].name.to_string_lossy(), "Blur");
+        let steps = &set.actions[0].items;
+        assert_eq!(steps[0].event.id(), "gaussianBlur");
+        assert!(steps[0].enabled);
+        assert_eq!(steps[0].descriptor.as_ref().unwrap().get("Rds "), Some(&Value::UnitFloat { unit: *b"#Pxl", value: 2.5 }));
+        assert_eq!(steps[1].event.id(), "Invr");
+        assert!(!steps[1].enabled);
+        assert!(steps[1].with_dialog);
+    }
+
+    #[test]
+    fn rejects_every_truncation_and_trailing_bytes() {
+        let bytes = sample();
+        for n in 0..bytes.len() {
+            assert!(parse_bounded(&bytes[..n]).is_err(), "truncation {n}");
+        }
+        let mut extra = bytes;
+        extra.push(0);
+        assert!(parse_bounded(&extra).is_err());
+    }
+
+    #[test]
+    fn malformed_versions_counts_and_mutations_never_panic() {
+        let bytes = sample();
+        for i in 0..bytes.len() {
+            for mask in [1, 128, 255] {
+                let mut altered = bytes.clone();
+                altered[i] ^= mask;
+                let _ = parse_bounded(&altered);
+            }
+        }
+        let mut version = bytes;
+        version[..4].copy_from_slice(&15u32.to_be_bytes());
+        assert!(parse_bounded(&version).is_err());
+        let mut oversized = 16u32.to_be_bytes().to_vec();
+        unicode(&mut oversized, "");
+        oversized.push(0);
+        oversized.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert!(parse_bounded(&oversized).is_err());
     }
 }

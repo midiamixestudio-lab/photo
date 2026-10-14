@@ -67,6 +67,53 @@ pub fn action_steps(action: &Action) -> Vec<Value> {
     action.enabled_steps().map(|(_, (id, p))| json!([id, p])).collect()
 }
 
+/// File > Open, drag-and-drop and the panel picker share one engine import.
+pub(crate) fn import_bytes(app: &mut PhotocraftApp, name: &str, bytes: &[u8]) -> Result<Value, String> {
+    let extension = std::path::Path::new(name).extension().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let format = match extension.as_str() {
+        "atn" => "atn",
+        "pcactions" | "json" => "json",
+        _ => return Err("choose a Photoshop .atn or PhotoCraft .pcactions file".into()),
+    };
+    if bytes.len() > photocraft_engine::actions_import_cmds::MAX_FILE_BYTES {
+        return Err("action file exceeds 32 MiB".into());
+    }
+    let result = app.run("actions.import", json!({"format":format,"data":photocraft_engine::paint::tile::b64_encode(bytes)}))?;
+    app.ui.dock_tabs.history = 1;
+    crate::dock::reveal(app, crate::dock::Group::History);
+    app.ui.actions.selected = result.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok());
+    app.ui.actions.selected_step = None;
+    app.ui.actions.expanded.resize(app.session.actions.list.len(), true);
+    app.ui.status = format!("{}: {}", tl!("Actions"), result.get("count").and_then(Value::as_u64).unwrap_or(0));
+    if let Some(warning) = result.get("warnings").and_then(Value::as_array).and_then(|v| v.first()).and_then(Value::as_str) {
+        app.ui.status.push_str(" · ");
+        app.ui.status.push_str(warning);
+    }
+    app.ui.status_error = false;
+    Ok(result)
+}
+
+fn load_file(app: &mut PhotocraftApp) -> Result<Value, String> {
+    app.pick_file_bytes_filtered(&["atn", "pcactions", "json"], |app, name, bytes| import_bytes(app, &name, &bytes))
+}
+
+fn save_file(app: &mut PhotocraftApp) -> Result<Value, String> {
+    let result = app.run("actions.export", json!({}))?;
+    let data = result.get("data").and_then(Value::as_str).ok_or("missing action export bytes")?;
+    let bytes = photocraft_engine::paint::tile::b64_decode(data).ok_or("invalid action export bytes")?;
+    app.pick_save("Actions.pcactions", move |app, mut path| {
+        let extension = std::path::Path::new(&path).extension().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if extension.is_empty() {
+            path.push_str(".pcactions");
+        } else if !matches!(extension.as_str(), "pcactions" | "json") {
+            return Err("Portable actions use .pcactions or .json; use Save Actions… for Photoshop .atn files".into());
+        }
+        let write = app.services.write.as_mut().ok_or("no writer configured")?;
+        write(&path, &bytes)?;
+        Ok(json!({"path":path,"count":result["count"]}))
+    })
+}
+
 /// Named action bindings use the existing persisted shortcut overrides. Keeping the
 /// name in the key means selecting or deleting another row cannot retarget F6.
 pub(crate) const SHORTCUT_PREFIX: &str = actions_cmds::PLAY_SHORTCUT_PREFIX;
@@ -867,6 +914,25 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         let recording_now = app.session.actions.recording.is_some();
+        ui.menu_button(tl!("Actions"), |ui| {
+            let idle = !recording_now && app.session.actions.playing == 0 && !app.file_dialog_open();
+            if ui.add_enabled(idle, egui::Button::new(tl!("Load…"))).clicked() {
+                let result = load_file(app);
+                if let Err(error) = result {
+                    app.ui.status = error;
+                    app.ui.status_error = true;
+                }
+                ui.close();
+            }
+            if ui.add_enabled(idle && !app.session.actions.list.is_empty(), egui::Button::new(tl!("Save…"))).clicked() {
+                let result = save_file(app);
+                if let Err(error) = result {
+                    app.ui.status = error;
+                    app.ui.status_error = true;
+                }
+                ui.close();
+            }
+        });
         if crate::icons::button(ui, "square", 24.0, false, tl!("Stop playing/recording")).clicked() && recording_now {
             let _ = app.run("actions.stop", json!({}));
         }
@@ -910,6 +976,129 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn actions_menu_load_button_opens_the_filtered_picker() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let (dialog, requests) = crate::file_dialog::fake(vec![None]);
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services { file_dialog: Some(dialog), ..Default::default() });
+        let mut h = Harness::builder().with_size(vec2(320.0, 300.0)).build_ui_state(
+            |ui, app| {
+                app.poll_file_dialog(ui.ctx(), None);
+                panel(app, ui);
+            },
+            app,
+        );
+        h.run_steps(3);
+        h.get_by_label("Actions").click();
+        h.run_steps(3);
+        h.get_by_label("Load…").click();
+        h.run_steps(3);
+        assert!(matches!(&requests.borrow()[0], crate::file_dialog::FileDialogRequest::Open { extensions: Some(ext), .. } if ext.contains(&"atn".to_string())));
+        assert!(h.state().session.actions.list.is_empty(), "cancelling the picker adds no actions");
+    }
+
+    #[test]
+    fn portable_save_rejects_atn_without_writing_and_points_to_photoshop_save() {
+        use crate::file_dialog::{self, FileDialogAnswer};
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let (dialog, _) = file_dialog::fake(vec![Some(FileDialogAnswer::SaveTo("Studio.atn".into()))]);
+        let written = Rc::new(Cell::new(false));
+        let captured = written.clone();
+        let mut app = PhotocraftApp::new(
+            photocraft_engine::Session::new(),
+            crate::Services {
+                file_dialog: Some(dialog),
+                write: Some(Box::new(move |_, _| {
+                    captured.set(true);
+                    Ok(())
+                })),
+                ..Default::default()
+            },
+        );
+        app.session.actions.list.push(Action::new("Kept", vec![("layer.new.layer".into(), json!({}))]));
+        let before = app.session.actions.clone();
+        save_file(&mut app).unwrap();
+        let ctx = egui::Context::default();
+        app.poll_file_dialog(&ctx, None);
+        app.poll_file_dialog(&ctx, None);
+        assert!(!written.get());
+        assert_eq!(app.session.actions, before);
+        assert!(app.ui.status_error);
+        assert!(app.ui.status.contains("Save Actions"));
+    }
+
+    #[test]
+    fn loading_a_portable_set_reveals_the_panel_and_keeps_the_document() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width":2,"height":2})).unwrap();
+        let before = app.session.active().unwrap().doc.clone();
+        app.ui.panels.history = false;
+        app.ui.dock.set_collapsed(crate::dock::Group::History, true);
+        let bytes = serde_json::to_vec(&photocraft_engine::actions_cmds::ActionsFile {
+            version: 1,
+            actions: vec![Action::new("Imported", vec![("layer.new.layer".into(), json!({"name":"Imported"}))])],
+        })
+        .unwrap();
+        crate::preset_files_ui::open(&mut app, "Actions.PCACTIONS", &bytes).unwrap().unwrap();
+        assert!(app.ui.panels.history);
+        assert!(!app.ui.dock.is_collapsed(crate::dock::Group::History));
+        assert_eq!(app.ui.dock_tabs.history, 1);
+        assert_eq!(app.ui.actions.selected, Some(0));
+        assert_eq!(app.session.active().unwrap().doc, before);
+        let state = app.session.actions.clone();
+        assert!(import_bytes(&mut app, "broken.atn", b"broken").is_err());
+        assert_eq!(app.session.actions, state);
+    }
+
+    #[test]
+    fn picker_save_roundtrip_and_write_failure_preserve_the_library() {
+        use crate::file_dialog::{self, FileDialogAnswer};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let (dialog, requests) = file_dialog::fake(vec![Some(FileDialogAnswer::SaveTo("Studio.pcactions".into()))]);
+        let written = Rc::new(RefCell::new(Vec::<u8>::new()));
+        let captured = written.clone();
+        let mut app = PhotocraftApp::new(
+            photocraft_engine::Session::new(),
+            crate::Services {
+                file_dialog: Some(dialog),
+                write: Some(Box::new(move |path, bytes| {
+                    assert_eq!(path, "Studio.pcactions");
+                    *captured.borrow_mut() = bytes.to_vec();
+                    Ok(())
+                })),
+                ..Default::default()
+            },
+        );
+        app.session.actions.list.push(Action::new("Kept", vec![("layer.new.layer".into(), json!({}))]));
+        let before = app.session.actions.list.clone();
+        save_file(&mut app).unwrap();
+        let ctx = egui::Context::default();
+        app.poll_file_dialog(&ctx, None);
+        app.poll_file_dialog(&ctx, None);
+        assert!(matches!(&requests.borrow()[0],file_dialog::FileDialogRequest::Save { suggested } if suggested=="Actions.pcactions"));
+        assert!(!written.borrow().is_empty());
+        let (dialog, requests) = file_dialog::fake(vec![Some(FileDialogAnswer::Contents("Studio.pcactions".into(), written.borrow().clone()))]);
+        let mut other = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services { file_dialog: Some(dialog), ..Default::default() });
+        load_file(&mut other).unwrap();
+        other.poll_file_dialog(&ctx, None);
+        other.poll_file_dialog(&ctx, None);
+        assert_eq!(other.session.actions.list, before);
+        assert!(
+            matches!(&requests.borrow()[0],file_dialog::FileDialogRequest::Open { extensions:Some(ext),.. } if ext.contains(&"atn".to_string()) && ext.contains(&"pcactions".to_string()))
+        );
+        let (dialog, _) = file_dialog::fake(vec![Some(FileDialogAnswer::SaveTo("fail.pcactions".into()))]);
+        app.services.file_dialog = Some(dialog);
+        app.services.write = Some(Box::new(|_, _| Err("disk full".into())));
+        save_file(&mut app).unwrap();
+        app.poll_file_dialog(&ctx, None);
+        app.poll_file_dialog(&ctx, None);
+        assert_eq!(app.session.actions.list, before);
+        assert!(app.ui.status_error);
+        assert!(app.ui.status.contains("disk full"));
+    }
 
     #[test]
     fn actions_list_grows_with_panel_and_keeps_footer_visible() {
