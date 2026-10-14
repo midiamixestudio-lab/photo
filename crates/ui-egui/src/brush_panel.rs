@@ -354,16 +354,22 @@ fn settings_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         app.ui.brush_section = 0;
     }
     let section = app.ui.brush_section;
+    // Reserve the preview/actions and separators before giving the list and options a viewport.
+    // The inner tip grid takes half of this finite height; other controls keep outer scrolling.
+    let footer = STRIP.1 as f32 + 4.0 * ui.spacing().item_spacing.y + 13.0;
+    let available = ui.available_height();
+    let body_height = if available.is_finite() { (available - footer).max(360.0) } else { 450.0 };
     ui.horizontal_top(|ui| {
         section_list(app, ui, &mut b);
-        widgets::vline(ui, 482.0);
+        widgets::vline(ui, body_height);
         ui.vertical(|ui| {
             ui.set_width(WIDTH - 190.0);
             // No title above the options (#3477): the selected row in the list names them, as
             // in Photoshop, and the line is better spent on the options.
             let on = section_flag(&mut b, section).is_none_or(|f| *f);
-            egui::ScrollArea::vertical().id_salt(("brush-section", section)).max_height(450.0).auto_shrink([false, false]).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(("brush-section", section)).max_height(body_height).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_width(WIDTH - 204.0);
+                ui.set_max_height(body_height);
                 // A section that's off shows its options greyed out (Photoshop). A tip picked in
                 // the grid copies the tip fields only — the dynamics sections stay (Photoshop).
                 // The picked preset is recorded by name (`brush.presets.setCurrent`, identity, so
@@ -507,7 +513,9 @@ pub fn window(app: &mut PhotocraftApp, ctx: &egui::Context) {
     egui::Window::new(tl!("Brush Settings"))
         .id(egui::Id::new("brush-settings"))
         .title_bar(false)
-        .resizable(false)
+        .resizable([false, true])
+        .default_height(800.0)
+        .max_height((ctx.content_rect().height() - 40.0).max(0.0))
         .frame(frame)
         .default_pos(egui::pos2((canvas.right() - WIDTH - 30.0).max(canvas.left() + 8.0), canvas.top() + 24.0))
         .show(ctx, |ui| {

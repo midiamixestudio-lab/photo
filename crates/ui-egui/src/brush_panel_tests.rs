@@ -1467,3 +1467,119 @@ fn checkboxes_show_a_pressed_state_from_their_label() {
     assert!(*h.state(), "the release checks it");
     assert_eq!(fill(&h), Some(widgets::check_box_fill(true, false, &t)));
 }
+
+#[test]
+fn tip_grid_window_picks_only_tip_fields_and_records_its_identity() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    for capture_size in [true, false] {
+        let mut h = harness(0, 0);
+        h.state_mut().session.tools.presets = (0..16)
+            .map(|i| paint::BrushPreset {
+                name: format!("Tip command {i:04}"),
+                brush: BrushSettings {
+                    size: 73.0,
+                    hardness: 0.35,
+                    angle: 37.0,
+                    roundness: 0.45,
+                    spacing: 0.21,
+                    tip: TipShape::Sampled(GrayTile { width: 2, height: 2, data: vec![0, 65535, 65535, 0].into() }),
+                    ..Default::default()
+                },
+                builtin: false,
+                group: "Synthetic".into(),
+                folder: Vec::new(),
+                captures: paint::PresetCaptures { size: capture_size, ..Default::default() },
+            })
+            .collect();
+        h.state_mut()
+            .session
+            .execute(
+                "tools.setBrush",
+                json!({
+                    "size":17.25,"hardness":0.9,"angle":-29,"roundness":0.85,"spacing":0.11,
+                    "flipX":true,"spacingEnabled":false,"noise":true,"locks":{"noise":true},
+                    "shapeDynamics":{"enabled":true,"size":{"control":"penTilt","minimum":0.37}}
+                }),
+            )
+            .unwrap();
+        h.run_steps(4);
+        let before = h.state().session.tools.brush.clone();
+        let presets = h.state().session.tools.presets.clone();
+        let n = h.state().session.journal.len();
+        let chosen = presets[7].clone();
+        h.get_by_label("Tip command 0007").click();
+        h.run_steps(4);
+        let mut expected = before.clone();
+        expected.tip = chosen.brush.tip.clone();
+        // The model documents that uncaptured size stays with the working tool.
+        expected.size = chosen.picked_over(&before).size;
+        expected.hardness = chosen.brush.hardness;
+        expected.angle = chosen.brush.angle;
+        expected.roundness = chosen.brush.roundness;
+        expected.spacing = chosen.brush.spacing;
+        assert_eq!(h.state().session.tools.brush, expected, "captureSize={capture_size}: preserve the model's size choice and non-tip fields");
+        assert_eq!(h.state().session.tools.presets, presets, "picking cannot rewrite the saved preset");
+        assert_eq!(h.state().session.tools.current_preset.as_deref(), Some("Tip command 0007"));
+        assert_eq!(h.state().session.journal.len(), n + 2);
+        assert_eq!(h.state().session.journal[n].0, "brush.presets.setCurrent");
+        let (id, params) = last_journal(h.state()).unwrap();
+        assert_eq!(id, "tools.setBrush");
+        let mut patch = json!({"tip":serde_json::to_value(&chosen.brush.tip).unwrap(),"hardness":0.35f32,"angle":37.0,"roundness":0.45f32,"spacing":0.21f32});
+        if capture_size {
+            patch["size"] = json!(73.0);
+        }
+        assert_eq!(params["brush"], patch, "uncaptured size must not leak into the command journal");
+        let mut replay = photocraft_engine::Session::new();
+        replay.tools.presets = presets;
+        replay.tools.brush = before;
+        for (id, params) in &h.state().session.journal[n..] {
+            replay.execute(id, params.clone()).unwrap();
+        }
+        assert_eq!(replay.tools.brush, expected);
+        assert_eq!(replay.tools.current_preset.as_deref(), Some("Tip command 0007"));
+        assert_eq!(h.get_by_label("Tip command 0007").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+        assert_eq!(h.get_by_label("Tip command 0006").accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+    }
+}
+
+#[test]
+fn tip_grid_window_keeps_lower_controls_and_preview_reachable_after_resize() {
+    use egui_kittest::kittest::Queryable;
+    fn visible_spacing(shape: &egui::Shape, clip: egui::Rect) -> usize {
+        match shape {
+            egui::Shape::Text(t) if t.galley.job.text == "Spacing" && clip.contains(t.pos + t.galley.size() * 0.5) => 1,
+            egui::Shape::Vec(v) => v.iter().map(|s| visible_spacing(s, clip)).sum(),
+            _ => 0,
+        }
+    }
+    for kind in crate::theme::ThemeKind::ALL {
+        let mut h = harness(0, 0);
+        PhotocraftApp::setup_context(&h.ctx, kind);
+        h.set_size(vec2(900.0, 600.0));
+        h.run_steps(8);
+        for label in ["Create new brush from these settings", "Reset the brush to the defaults", "Update the current brush with these settings"] {
+            let footer = h.get_by_label(label).rect();
+            assert!(
+                egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(900.0, 600.0)).contains_rect(footer),
+                "{kind:?}: {label} must fit the viewport: {footer:?}"
+            );
+        }
+        let before = h.state().session.tools.brush.clone();
+        let n = h.state().session.journal.len();
+        let bar = h.get_all_by_role(egui::accesskit::Role::ScrollBar).map(|b| b.rect()).max_by(|a, b| a.center().x.total_cmp(&b.center().x)).unwrap();
+        let start = egui::pos2(bar.center().x, bar.top() + 4.0);
+        let end = egui::pos2(bar.center().x, bar.bottom() - 2.0);
+        h.hover_at(start);
+        h.run_steps(1);
+        h.drag_at(start);
+        h.run_steps(2);
+        h.hover_at(end);
+        h.run_steps(2);
+        h.drop_at(end);
+        h.run_steps(4);
+        let visible: usize = h.output().shapes.iter().map(|s| visible_spacing(&s.shape, s.clip_rect)).sum();
+        assert!(visible >= 2, "{kind:?}: the spacing switch and slider label remain reachable");
+        assert_eq!(h.state().session.tools.brush, before);
+        assert_eq!(h.state().session.journal.len(), n);
+    }
+}
