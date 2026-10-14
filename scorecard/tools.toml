@@ -85,9 +85,9 @@ note = "Global: Preferences › Tools › Pressure Curve (prefs tools.pressureCu
 [[item]]
 id = "TOOL-213-12"
 target = "Import an image file as a brush tip"
-status = "missing"
+status = "done"
 issue = 213
-note = "Only brush.defineFromSelection and brush.presets.importAbr"
+note = "brush.defineFromImage reads an image file (path or base64 data) at any format/depth, converts to paint amount (darkness/lightness/alpha), crops to painted extent, downscales to MAX_TIP if larger, saves a preset and selects it; brush_tip_image_cmds.rs"
 
 [[item]]
 id = "TOOL-213-13"

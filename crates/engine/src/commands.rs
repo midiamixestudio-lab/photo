@@ -1261,6 +1261,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::color_cmds::specs());
     v.extend(crate::brush_cmds::specs());
     v.extend(crate::brush_preset_cmds::specs());
+    v.extend(crate::brush_tip_image_cmds::specs());
     v.extend(crate::eraser_cmds::specs());
     v.extend(crate::preset_import_cmds::specs());
     v.extend(crate::atn_cmds::specs());

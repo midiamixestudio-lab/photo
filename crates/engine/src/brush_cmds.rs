@@ -748,12 +748,12 @@ fn presets_list(s: &mut Session, p: &Value) -> Result<Value> {
     }))
 }
 
-fn name_param(p: &Value, cmd: &str) -> Result<String> {
+pub(crate) fn name_param(p: &Value, cmd: &str) -> Result<String> {
     p.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(cmd, "missing `name`"))
 }
 
 /// Replace the preset of that name, or append it at the end of the list.
-fn upsert(s: &mut Session, preset: BrushPreset) {
+pub(crate) fn upsert(s: &mut Session, preset: BrushPreset) {
     match s.tools.presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&preset.name)) {
         Some(x) => *x = preset,
         None => s.tools.presets.push(preset),
@@ -845,6 +845,81 @@ fn has_selection_and_pixels(s: &Session) -> std::result::Result<(), String> {
 /// Largest sampled tip side (like Photoshop's 5000 px limit, kept smaller for preset size).
 pub const MAX_TIP: u32 = 2500;
 
+/// A sampled-tip brush from per-pixel paint amounts (`0` = no paint, `1` = full paint), `w` × `h`
+/// in row-major order: cropped to the extent that has paint, sized to its longest side, spaced at
+/// 25 %. Shared by Define Brush Preset (from a selection) and the image-as-tip import. Returns the
+/// brush and the tip's size; an `Err` when nothing is painted. A cropped tip longer than
+/// [`MAX_TIP`] is an `Err` too, unless `fit` shrinks it to fit (a box average).
+pub(crate) fn sampled_tip_brush(cmd: &str, v: &[f32], w: usize, h: usize, fit: bool) -> Result<(BrushSettings, u32, u32)> {
+    let mismatch = || bad(cmd, "the tip's pixels do not match its size");
+    if w.checked_mul(h) != Some(v.len()) {
+        return Err(mismatch());
+    }
+    // Crop to the painted extent.
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for y in 0..h {
+        for x in 0..w {
+            if v.get(y * w + x).is_some_and(|a| *a > 1e-4) {
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x + 1);
+                y1 = y1.max(y + 1);
+            }
+        }
+    }
+    if x1 <= x0 || y1 <= y0 {
+        return Err(bad(cmd, "the source pixels contain no paint (all white or transparent)"));
+    }
+    let (mut tw, mut th) = ((x1 - x0) as u32, (y1 - y0) as u32);
+    if tw.max(th) > MAX_TIP && !fit {
+        return Err(bad(cmd, format!("too large for a brush tip ({tw}×{th}; max {MAX_TIP} px)")));
+    }
+    let mut data = Vec::with_capacity(tw as usize * th as usize);
+    for y in y0..y1 {
+        data.extend_from_slice(v.get(y * w + x0..y * w + x1).ok_or_else(mismatch)?);
+    }
+    if tw.max(th) > MAX_TIP {
+        (data, tw, th) = shrink_to(&data, tw, th, MAX_TIP).ok_or_else(mismatch)?;
+    }
+    let tip = GrayTile::from_f32(tw, th, &data);
+    let brush = BrushSettings { tip: TipShape::Sampled(tip), size: tw.max(th) as f32, spacing: 0.25, pressure_size: false, ..BrushSettings::default() };
+    Ok((brush, tw, th))
+}
+
+/// `data` (`w` × `h`) shrunk so its longest side is `max` px, keeping the proportions: every new
+/// pixel is the average of the source pixels it covers. `None` if `data` is not `w` × `h`.
+pub(crate) fn shrink_to(data: &[f32], w: u32, h: u32, max: u32) -> Option<(Vec<f32>, u32, u32)> {
+    let longest = w.max(h);
+    if w == 0 || h == 0 || max == 0 || longest <= max || data.len() != w as usize * h as usize {
+        return None;
+    }
+    let scale = f64::from(max) / f64::from(longest);
+    let nw = ((f64::from(w) * scale).round() as u32).clamp(1, max);
+    let nh = ((f64::from(h) * scale).round() as u32).clamp(1, max);
+    // Source span of new index `i` of `n` over `len` source pixels (never empty).
+    let span = |i: u32, n: u32, len: u32| {
+        let a = (u64::from(i) * u64::from(len) / u64::from(n)) as usize;
+        let b = ((u64::from(i) + 1) * u64::from(len)).div_ceil(u64::from(n)) as usize;
+        (a, b.max(a + 1).min(len as usize))
+    };
+    let mut out = Vec::with_capacity(nw as usize * nh as usize);
+    for y in 0..nh {
+        let (sy0, sy1) = span(y, nh, h);
+        for x in 0..nw {
+            let (sx0, sx1) = span(x, nw, w);
+            let (mut sum, mut n) = (0.0f32, 0u32);
+            for sy in sy0..sy1 {
+                for v in data.get(sy * w as usize + sx0..sy * w as usize + sx1)? {
+                    sum += *v;
+                    n += 1;
+                }
+            }
+            out.push(if n == 0 { 0.0 } else { sum / n as f32 });
+        }
+    }
+    Some((out, nw, nh))
+}
+
 fn define_from_selection(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "brush.defineFromSelection";
     let name = name_param(p, cmd)?;
@@ -868,32 +943,9 @@ fn define_from_selection(s: &mut Session, p: &Value) -> Result<Value> {
             v[y * w + x] = ((1.0 - l) * c[3] * sv[(y * w + x) * sc]).clamp(0.0, 1.0);
         }
     }
-    // Crop to the painted extent.
-    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
-    for y in 0..h {
-        for x in 0..w {
-            if v[y * w + x] > 1e-4 {
-                x0 = x0.min(x);
-                y0 = y0.min(y);
-                x1 = x1.max(x + 1);
-                y1 = y1.max(y + 1);
-            }
-        }
-    }
-    if x1 <= x0 || y1 <= y0 {
-        return Err(bad(cmd, "the selected pixels contain no paint (all white or transparent)"));
-    }
-    let (tw, th) = ((x1 - x0) as u32, (y1 - y0) as u32);
-    if tw.max(th) > MAX_TIP {
-        return Err(bad(cmd, format!("selection too large for a brush tip ({tw}×{th}; max {MAX_TIP} px)")));
-    }
-    let mut data = Vec::with_capacity((tw * th) as usize);
-    for y in y0..y1 {
-        data.extend_from_slice(&v[y * w + x0..y * w + x1]);
-    }
-    let tip = GrayTile::from_f32(tw, th, &data);
-    let brush = BrushSettings { tip: TipShape::Sampled(tip), size: tw.max(th) as f32, spacing: 0.25, pressure_size: false, ..BrushSettings::default() };
+    let (brush, tw, th) = sampled_tip_brush(cmd, &v, w, h, false)?;
     upsert(s, BrushPreset { name: name.clone(), brush: brush.clone(), builtin: false, group: String::new(), folder: Vec::new(), captures: Default::default() });
+
     s.tools.brush = brush;
     s.tools.current_preset = Some(name.clone());
     s.tools.brush_changed();

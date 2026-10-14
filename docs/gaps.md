@@ -165,11 +165,12 @@ what an agent can't finish alone.
 - **Progress (2026-10-12, #4283):** the five checkbox-only Brush Settings rows keep the open
   controls selected; Smoothing can be disabled without discarding its amount or mode. This
   closes that panel interaction gap, not the stroke-quality or performance gaps below.
+- **Progress (2026-10-12, TOOL-213-12):** import image file as a brush tip (`brush.defineFromImage`).
 - **Missing:** lag with big brushes (#2619, #1994) and under the cursor (#2566, #1343); jumpy
   pressure on Windows (#2046) and tap sensitivity (#1933); stair-stepped line weights (#1776),
   interpolation and smoothing problems (#2138), edge falloff (#2149), pixelated cursor vs
   Photoshop (#1433), brush rotation not driven by pen rotation (#1301); live preview only for
-  Brush and Eraser (TOOL-213-7); no image file as a brush tip (TOOL-213-12); per-control pressure
+  Brush and Eraser (TOOL-213-7); per-control pressure
   curves (TOOL-213-11); 4 of Photoshop's symmetry modes.
 - **Detail:** [`brush-parity.md`](brush-parity.md).
 - **Estimate:** 100–180 h. **Human:** checking feel on real tablets.
