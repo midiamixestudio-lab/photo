@@ -784,6 +784,19 @@ pub fn shortcut_items(app: &PhotocraftApp) -> Vec<(String, String, Vec<String>, 
 }
 
 /// Text of a key press for the shortcut editor (`Cmd+Shift+K`), `None` for bare modifiers.
+/// Keys the system takes before the app sees them (switching apps, closing the window, force
+/// quit): Edit › Keyboard Shortcuts won't assign them, as Photoshop won't. `sc` is in our
+/// notation, where `Cmd` is Ctrl off the Mac.
+pub fn reserved_shortcut(sc: &str) -> bool {
+    let Some(n) = prefs::normalize_shortcut(sc) else { return false };
+    let reserved: &[&str] = if cfg!(target_os = "macos") {
+        &["Cmd+Tab", "Cmd+Shift+Tab", "Cmd+Alt+Escape", "Cmd+`"]
+    } else {
+        &["Alt+Tab", "Alt+Shift+Tab", "Alt+F4", "Cmd+Alt+Delete", "Cmd+Escape", "Cmd+Shift+Escape"]
+    };
+    reserved.iter().filter_map(|r| prefs::normalize_shortcut(r)).any(|r| r == n)
+}
+
 pub fn shortcut_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
     if is_modifier_key(key) {
         return None;
@@ -1647,6 +1660,9 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     let alternates_ok = parsed_alts.as_ref().is_none_or(Result::is_ok);
     let mut alt_overrides = parsed_alts.and_then(Result::ok).unwrap_or_default();
     let mut capture_alt = f.get("captureAlt").and_then(Value::as_bool).unwrap_or(false);
+    // A key just assigned that another command holds: Photoshop's Accept and Go to Conflict /
+    // Undo Changes (an object: the key, the other command, and this one's keys before).
+    let mut conflict: Option<Value> = f.get("conflict").filter(|c| c.is_object()).cloned();
     let mut hidden: Vec<String> = f.get("hidden").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
     let mut colors: BTreeMap<String, String> = f.get("colors").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
     let mut selected = f.get("selected").and_then(Value::as_str).unwrap_or("").to_string();
@@ -1708,8 +1724,12 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                 capture = false;
                 message = tl!("Shortcut removed.").into();
                 message_warning = false;
+            } else if let Some(sc) = shortcut_text(key, m).filter(|sc| reserved_shortcut(sc)) {
+                message = crate::i18n::fmt(tl!("{shortcut} is reserved by the system and can't be assigned."), &[("shortcut", &crate::shortcuts::pretty(&sc))]);
+                message_warning = true;
+                capture = false;
             } else if let Some(sc) = shortcut_text(key, m) {
-                let clash: Vec<String> = items
+                let clash_ids: Vec<&str> = items
                     .iter()
                     .filter(|(id, _, _, def)| {
                         let cur = eff(&overrides, id, def);
@@ -1717,11 +1737,28 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                             && (cur.as_deref().and_then(prefs::normalize_shortcut) == Some(sc.clone())
                                 || eff_alts(&alt_overrides, id, cur.as_deref()).contains(&sc))
                     })
+                    .map(|(id, ..)| id.as_str())
+                    .collect();
+                let clash: Vec<String> = items
+                    .iter()
+                    .filter(|(id, ..)| clash_ids.contains(&id.as_str()))
                     .map(|(id, label, path, _)| {
                         let (path, label) = shown(id, label, path);
                         format!("{} › {}", path.join(" › "), label.trim_end_matches('…'))
                     })
                     .collect();
+                // What Undo Changes puts back: the command's main key and further keys as they were.
+                if let Some(first) = clash_ids.first() {
+                    conflict = Some(json!({
+                        "shortcut": sc,
+                        "with": first,
+                        "command": selected,
+                        "main": overrides.get(&selected),
+                        "alternates": alt_overrides.get(&selected),
+                    }));
+                } else {
+                    conflict = None;
+                }
                 if capture_alt {
                     let def = items.iter().find(|i| i.0 == selected).and_then(|i| i.3.clone());
                     let cur = eff(&overrides, &selected, &def);
@@ -1883,6 +1920,44 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     if !message.is_empty() {
         ui.label(RichText::new(&message).color(if message_warning { t.warning } else { t.text_dim }));
     }
+    if tab == 0
+        && let Some(c) = conflict.clone()
+    {
+        let (key, with, command) =
+            (c["shortcut"].as_str().unwrap_or_default(), c["with"].as_str().unwrap_or_default(), c["command"].as_str().unwrap_or_default());
+        ui.horizontal(|ui| {
+            if ui.button(tl!("Accept and Go to Conflict")).on_hover_text(tl!("Take the shortcut from the other command and select it")).clicked() {
+                let def = items.iter().find(|i| i.0 == with).and_then(|i| i.3.clone());
+                let cur = eff(&overrides, with, &def);
+                if cur.as_deref().and_then(prefs::normalize_shortcut).as_deref() == Some(key) {
+                    overrides.insert(with.to_string(), String::new());
+                }
+                let keys = eff_alts(&alt_overrides, with, eff(&overrides, with, &def).as_deref());
+                if keys.iter().any(|k| k == key) {
+                    alt_overrides.insert(with.to_string(), keys.into_iter().filter(|k| k != key).collect());
+                }
+                selected = with.to_string();
+                filter.clear();
+                message = tl!("Choose a new shortcut for this command, or leave it without one.").into();
+                message_warning = false;
+                conflict = None;
+            }
+            if ui.button(tl!("Undo Changes")).on_hover_text(tl!("Put this command's shortcuts back as they were")).clicked() {
+                match c["main"].as_str() {
+                    Some(m) => overrides.insert(command.to_string(), m.to_string()),
+                    None => overrides.remove(command),
+                };
+                match serde_json::from_value::<Vec<String>>(c["alternates"].clone()) {
+                    Ok(list) => alt_overrides.insert(command.to_string(), list),
+                    Err(_) => alt_overrides.remove(command),
+                };
+                selected = command.to_string();
+                message = tl!("Changes undone.").into();
+                message_warning = false;
+                conflict = None;
+            }
+        });
+    }
     if overrides_ok {
         f.insert("overrides".into(), json!(overrides));
     }
@@ -1890,6 +1965,7 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
         f.insert("alternates".into(), json!(alt_overrides));
     }
     f.insert("captureAlt".into(), json!(capture && capture_alt));
+    f.insert("conflict".into(), conflict.unwrap_or(Value::Null));
     f.insert("hidden".into(), json!(hidden));
     f.insert("colors".into(), json!(colors));
     f.insert("selected".into(), json!(selected));
