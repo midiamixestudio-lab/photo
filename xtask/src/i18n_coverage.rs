@@ -579,6 +579,7 @@ mod tests {
             ("el", "el.tsv"),
             ("uk", "uk.tsv"),
             ("nl", "nl.tsv"),
+            ("fa", "fa.tsv"),
             ("hu", "hu.tsv"),
             ("tr", "tr.tsv"),
             ("vi", "vi.tsv"),

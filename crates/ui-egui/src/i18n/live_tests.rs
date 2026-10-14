@@ -17,6 +17,7 @@ fn requested_languages_resolve_regional_preferences() {
         ("ko-KR", "ko"),
         ("ru-RU", "ru"),
         ("uk-UA", "uk"),
+        ("fa-IR", "fa"),
         ("fr-CA", "fr"),
         ("id-ID", "id"),
         ("vi-VN", "vi"),
@@ -41,7 +42,18 @@ fn ukrainian_native_app_menu_keeps_product_and_language_names() {
         assert_eq!(layout.bar.find("app.language.uk").map(|item| (item.label.as_str(), item.checked)), Some(("Українська", Some(true))));
     });
 }
-
+#[test]
+fn persian_native_app_menu_keeps_product_and_language_names() {
+    with_language(Lang::EN, || {
+        let h = harness();
+        let layout = crate::native_menu::photocraft_layout(&crate::menus::menu_items(h.state()), lang("fa"), "fa");
+        for (id, label) in [("help.about", "درباره PhotoCraft"), (crate::native_menu::HIDE, "پنهان کردن PhotoCraft"), ("file.exit", "خروج از PhotoCraft")]
+        {
+            assert_eq!(layout.bar.find(id).map(|item| item.label.as_str()), Some(label), "{id}");
+        }
+        assert_eq!(layout.bar.find("app.language.fa").map(|item| (item.label.as_str(), item.checked)), Some(("فارسی", Some(true))));
+    });
+}
 #[test]
 fn french_and_korean_plural_messages_keep_placeholders() {
     for (n, expected) in [(0, "0 élément"), (1, "1 élément"), (2, "2 éléments"), (21, "21 éléments")] {
@@ -219,7 +231,7 @@ fn harness_with_services(services: Services) -> egui_kittest::Harness<'static, P
 
 #[test]
 fn first_launch_renders_the_system_language_without_overwriting_auto() {
-    for (tag, code) in [("en-US", "en"), ("zh-CN", "zh-hans"), ("ja-JP", "ja"), ("ko-KR", "ko"), ("ru-RU", "ru"), ("uk-UA", "uk"), ("fr-CA", "fr")] {
+    for (tag, code) in [("en-US", "en"), ("zh-CN", "zh-hans"), ("ja-JP", "ja"), ("ko-KR", "ko"), ("ru-RU", "ru"), ("uk-UA", "uk"), ("fa-IR", "fa"), ("fr-CA", "fr")] {
         system::with_system_tags(&[tag], || {
             with_language(Lang::EN, || {
                 let h = harness();
@@ -286,7 +298,7 @@ fn a_control_request_changes_the_drawing_language_in_the_same_frame() {
     with_language(Lang::EN, || {
         let mut h = harness();
         let document = h.state().session.active().expect("document").doc.clone();
-        for code in ["zh-hans", "ja", "ko", "ru", "uk", "fr", "id", "en"] {
+        for code in ["zh-hans", "ja", "ko", "ru", "uk", "fa", "fr", "id", "en"] {
             let (tx, rx) = std::sync::mpsc::channel();
             h.state_mut().control_rx = Some(rx);
             let (request, reply) =

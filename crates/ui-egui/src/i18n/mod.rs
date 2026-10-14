@@ -203,6 +203,7 @@ pub static LANGUAGES: [LangInfo; 21] = [
     // rather than English.
     LangInfo { code: "sr", name: "Srpski", source: catalog!("sr"), plural: plural_russian, complete_menus: true, catalog: OnceLock::new() },
     LangInfo { code: "cs", name: "Čeština", source: catalog!("cs"), plural: plural_cs, complete_menus: true, catalog: OnceLock::new() },
+    LangInfo { code: "fa", name: "فارسی", source: catalog!("fa"), plural: plural_one_other, complete_menus: true, catalog: OnceLock::new() },
     LangInfo { code: "fr", name: "Français", source: catalog!("fr"), plural: plural_fr, complete_menus: true, catalog: OnceLock::new() },
     LangInfo { code: "id", name: "Bahasa Indonesia", source: catalog!("id"), plural: plural_none, complete_menus: true, catalog: OnceLock::new() },
     LangInfo { code: "ko", name: "한국어", source: catalog!("ko"), plural: plural_none, complete_menus: true, catalog: OnceLock::new() },
@@ -773,6 +774,42 @@ mod tests {
     }
 
     #[test]
+    fn persian_plural_rules() {
+        let fa = || Lang::from_code("fa").expect("fa registered");
+        // Persian uses 'one' for 1 and 'other' for everything else (0, 2, 3, ...)
+        assert_eq!(trn(fa(), 1, "{n} item", "{n} items"), "1 آیتم");
+        assert_eq!(trn(fa(), 0, "{n} item", "{n} items"), "0 آیتم");
+        assert_eq!(trn(fa(), 2, "{n} item", "{n} items"), "2 آیتم");
+        assert_eq!(trn(fa(), 5, "{n} item", "{n} items"), "5 آیتم");
+        assert_eq!(trn(fa(), 11, "{n} item", "{n} items"), "11 آیتم");
+        assert_eq!(trn(fa(), 21, "{n} item", "{n} items"), "21 آیتم");
+        assert_eq!(trn(fa(), 101, "{n} item", "{n} items"), "101 آیتم");
+    }
+
+    #[test]
+    fn persian_resolves_locales_and_preferences() {
+        let fa = Lang::from_code("fa").expect("fa registered");
+        assert_eq!(fa.name(), "فارسی");
+        assert!(fa.complete_menus());
+        for tag in ["fa", "FA", "fa-IR", "fa_IR", "fa-IR.UTF-8"] {
+            assert_eq!(lang_from_tag(tag), Some(fa), "{tag}");
+            assert_eq!(Lang::from_pref(tag), fa, "{tag}");
+        }
+        assert_eq!(tr(fa, "File"), "فایل");
+        assert_eq!(tr(fa, "Layer"), "لایه");
+        assert_eq!(tr(fa, "New document…"), "سند جدید…");
+        assert_eq!(tr(fa, "No properties"), "بدون ویژگی");
+        assert_eq!(tr_id(fa, "select.all", "All"), "انتخاب همه");
+        assert_eq!(tr_ctx(fa, "cameraRaw", "Light"), "نور");
+        assert_eq!(tr_ctx(fa, "fontWeight", "Light"), "سبک");
+        assert_eq!(fmt(tr(fa, "Camera Raw Filter ({layer})"), &[("layer", "Background")]), "فیلتر Camera Raw (Background)");
+        for key in ["Alt", "⌥"] {
+            assert_eq!(
+                fmt(tr(fa, "Add a mask  (from the selection; {key} inverts)"), &[("key", key)]),
+                format!("افزودن ماسک  (از ناحیه انتخابی؛ {key} معکوس می‌کند)")
+            );
+        }
+        assert_eq!(tr(fa, "unknown translation"), "unknown translation");
     fn serbian_resolves_locales_and_preferences() {
         let sr = Lang::from_code("sr").expect("sr registered");
         assert_eq!(sr.name(), "Srpski");
