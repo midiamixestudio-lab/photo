@@ -2228,61 +2228,67 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         });
         ui.add_space(4.0);
     }
-    if let Some(l) = active_layer {
-        // Photoshop greys blend mode, Opacity and Fill for the Background layer.
-        let bg = crate::doc_props_ui::is_background(&doc, l);
-        ui.horizontal(|ui| {
-            ui.add_enabled_ui(!bg, |ui| {
-                let mut m = l.blend;
-                // Reserve space for the numeric field first. On a narrow dock, hide the
-                // redundant visible Opacity label rather than force the dropdown beyond
-                // the panel's right edge (#2309). The numeric field keeps its name.
-                let opacity_label = if t.pro { tl!("Opacity:") } else { tl!("Opacity") };
-                let (blend_width, show_opacity_label) =
-                    opacity_row_layout(ui.available_width(), body_text_width(ui, opacity_label), ui.spacing().item_spacing.x);
-                let (chosen, hovered) = widgets::dropdown_wheel_hovered(ui, "blend", &mut m, &blend_options(l.is_group(), l.blend), blend_width);
-                // One step per choice: a click, an arrow key or each wheel notch (#1747).
+    // Photoshop shows blend mode, Opacity, Lock and Fill for the active layer, but greys them out
+    // for the Background layer or when no layer is selected (they are disabled, not hidden).
+    let has_active = active_layer.is_some();
+    let bg = active_layer.is_some_and(|l| crate::doc_props_ui::is_background(&doc, l));
+    let enabled = has_active && !bg;
+    let mut m = active_layer.map_or(BlendMode::Normal, |l| l.blend);
+    let is_group = active_layer.is_some_and(|l| l.is_group());
+    let mut o = active_layer.map_or(100.0, |l| l.opacity * 100.0);
+    let mut f = active_layer.map_or(100.0, |l| l.fill_opacity * 100.0);
+    let lk = active_layer.map_or(photocraft_doc::Locks::default(), |l| l.locks);
+    ui.horizontal(|ui| {
+        ui.add_enabled_ui(enabled, |ui| {
+            // Reserve space for the numeric field first. On a narrow dock, hide the
+            // redundant visible Opacity label rather than force the dropdown beyond
+            // the panel's right edge (#2309). The numeric field keeps its name.
+            let opacity_label = if t.pro { tl!("Opacity:") } else { tl!("Opacity") };
+            let (blend_width, show_opacity_label) = opacity_row_layout(ui.available_width(), body_text_width(ui, opacity_label), ui.spacing().item_spacing.x);
+            let options = blend_options(is_group, m);
+            let (chosen, hovered) = widgets::dropdown_wheel_hovered(ui, "blend", &mut m, &options, blend_width);
+            // One step per choice: a click, an arrow key or each wheel notch (#1747).
+            if let Some(l) = active_layer {
                 for m in &chosen {
                     actions.push(("layer.setProps".into(), json!({"layer": l.id.0, "blend": m.label()})));
                 }
                 // Hovering a mode previews it on the canvas (#970).
                 crate::blend_preview::hover(app, l.id, hovered.filter(|_| chosen.is_empty()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut o = l.opacity * 100.0;
-                    let field = widgets::popup_value_field(ui, opacity_label, &mut o, 0.0..=100.0, "%", LAYER_PCT_W);
-                    // On a narrow dock the (scrubby) label yields its room to the controls (#2309).
-                    let scrub = if show_opacity_label {
-                        scrub_pct_label(ui, opacity_label, &mut o, ui.available_width())
-                    } else {
-                        widgets::PopupFieldResponse::default()
-                    };
-                    if field.changed || scrub.changed {
-                        actions.push(pct_action(l, "opacity", o, scrub.drag.or(field.drag)));
-                    }
-                });
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let field = widgets::popup_value_field(ui, opacity_label, &mut o, 0.0..=100.0, "%", LAYER_PCT_W);
+                // On a narrow dock the (scrubby) label yields its room to the controls (#2309).
+                let scrub =
+                    if show_opacity_label { scrub_pct_label(ui, opacity_label, &mut o, ui.available_width()) } else { widgets::PopupFieldResponse::default() };
+                if let Some(l) = active_layer
+                    && (field.changed || scrub.changed)
+                {
+                    actions.push(pct_action(l, "opacity", o, scrub.drag.or(field.drag)));
+                }
             });
         });
-        // Docks zero the item spacing: keep the Opacity and Fill fields apart (#155).
-        ui.add_space((theme::ROW_GAP - ui.spacing().item_spacing.y).max(0.0));
-        ui.horizontal(|ui| {
-            let lock_label = if t.pro { tl!("Lock:") } else { tl!("Lock") };
-            // Layer fill opacity (≠ Edit › Fill / path fill → Tô).
-            let lang = crate::i18n::current();
-            let fill_label = if t.pro { crate::i18n::tr_ctx(lang, "layers", "Fill:") } else { crate::i18n::tr_ctx(lang, "layers", "Fill") };
-            // In a narrow panel with long translated labels, drop the "Lock:" text (the icons keep
-            // their tooltips) rather than let the Fill label run over the lock icons.
-            let gap = ui.spacing().item_spacing.x;
-            let icons_w = if t.pro { 5.0 * 20.0 + gap } else { 22.0 + gap };
-            let fits = body_text_width(ui, lock_label) + icons_w + body_text_width(ui, fill_label) + LAYER_PCT_W + 2.0 * gap <= ui.available_width();
-            if fits {
-                label(ui, lock_label);
-            }
-            if t.pro {
+    });
+    // Docks zero the item spacing: keep the Opacity and Fill fields apart (#155).
+    ui.add_space((theme::ROW_GAP - ui.spacing().item_spacing.y).max(0.0));
+    ui.horizontal(|ui| {
+        let lock_label = if t.pro { tl!("Lock:") } else { tl!("Lock") };
+        // Layer fill opacity (≠ Edit › Fill / path fill → Tô).
+        let lang = crate::i18n::current();
+        let fill_label = if t.pro { crate::i18n::tr_ctx(lang, "layers", "Fill:") } else { crate::i18n::tr_ctx(lang, "layers", "Fill") };
+        // In a narrow panel with long translated labels, drop the "Lock:" text (the icons keep
+        // their tooltips) rather than let the Fill label run over the lock icons.
+        let gap = ui.spacing().item_spacing.x;
+        let icons_w = if t.pro { 5.0 * 20.0 + gap } else { 22.0 + gap };
+        let fits = body_text_width(ui, lock_label) + icons_w + body_text_width(ui, fill_label) + LAYER_PCT_W + 2.0 * gap <= ui.available_width();
+        if fits {
+            label(ui, lock_label);
+        }
+        if t.pro {
+            ui.add_enabled_ui(has_active, |ui| {
                 // The lock icons touch, but only they: the Fill label keeps the same gap before its
                 // field as Opacity's, so both stack in one right-aligned column (#2085).
                 ui.scope(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let lk = l.locks;
                     for (key, icon, tip, on) in [
                         ("transparency", "grid-3x3", tl!("Lock transparent pixels"), lk.transparency),
                         ("pixels", "brush", tl!("Lock image pixels"), lk.pixels),
@@ -2292,31 +2298,38 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     ] {
                         // Lock Image Pixels includes Lock Transparent Pixels, which waits for it (#4892).
                         let enabled = key != "transparency" || !lk.pixels;
-                        if ui.add_enabled_ui(enabled, |ui| icons::button(ui, icon, 20.0, on, tip)).inner.clicked() {
+                        if ui.add_enabled_ui(enabled, |ui| icons::button(ui, icon, 20.0, on, tip)).inner.clicked()
+                            && let Some(l) = active_layer
+                        {
                             actions.push(("layer.setProps".into(), json!({"layer": l.id.0, "locks": { key: !on }})));
                         }
                     }
                 });
-            }
-            if !t.pro {
-                let locked = l.locks.any();
-                if icons::button(ui, if locked { "lock" } else { "lock-open" }, 22.0, locked, tl!("Lock layer")).clicked() {
+            });
+        }
+        if !t.pro {
+            ui.add_enabled_ui(has_active, |ui| {
+                let locked = lk.any();
+                if icons::button(ui, if locked { "lock" } else { "lock-open" }, 22.0, locked, tl!("Lock layer")).clicked()
+                    && let Some(l) = active_layer
+                {
                     actions.push(simple_lock_toggle(bg, l));
                 }
-            }
-            ui.add_enabled_ui(!bg, |ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut f = l.fill_opacity * 100.0;
-                    let field = widgets::popup_value_field(ui, fill_label, &mut f, 0.0..=100.0, "%", LAYER_PCT_W);
-                    let scrub = scrub_pct_label(ui, fill_label, &mut f, ui.available_width());
-                    if field.changed || scrub.changed {
-                        actions.push(pct_action(l, "fill", f, scrub.drag.or(field.drag)));
-                    }
-                })
             });
+        }
+        ui.add_enabled_ui(enabled, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let field = widgets::popup_value_field(ui, fill_label, &mut f, 0.0..=100.0, "%", LAYER_PCT_W);
+                let scrub = scrub_pct_label(ui, fill_label, &mut f, ui.available_width());
+                if let Some(l) = active_layer
+                    && (field.changed || scrub.changed)
+                {
+                    actions.push(pct_action(l, "fill", f, scrub.drag.or(field.drag)));
+                }
+            })
         });
-        ui.add_space(2.0);
-    }
+    });
+    ui.add_space(2.0);
 
     // Top of the stack first, groups above their contents, closed groups' contents hidden (#126).
     let rows = crate::layer_tree_ui::panel_rows(app, &doc);

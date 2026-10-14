@@ -5013,14 +5013,14 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                         // marquee then replaces that selection on release.
                         let _ = app.run("layer.pickAt", json!({"x": x, "y": y, "target": target, "mode": mode}));
                     }
-                    crate::move_box::begin(app, [x, y], mods.shift);
+                    crate::move_box::begin(app, [x, y], mods.shift, locked_hit);
                     return;
                 }
                 let picked = app.run("layer.pickAt", json!({"x": x, "y": y, "target": target, "mode": mode}));
                 // No pixels there at all (an empty spot, or off the canvas): drag a marquee that
                 // selects the layers it touches instead (move_box.rs).
                 if picked.is_ok_and(|v| v["layer"].is_null()) && crate::move_box::empty_at(app, [x, y]) {
-                    crate::move_box::begin(app, [x, y], mods.shift);
+                    crate::move_box::begin(app, [x, y], mods.shift, false);
                     return;
                 }
                 // Snapping (and the drag's box) started before the pick: point it at what moves.

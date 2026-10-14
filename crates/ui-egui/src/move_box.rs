@@ -16,12 +16,14 @@ pub(crate) struct LayerBox {
     end: [f64; 2],
     /// ⇧ at the press: add to the layer selection.
     add: bool,
+    /// Started on a locked layer (a plain click keeps that layer selected, as in Photoshop).
+    locked_hit: bool,
 }
 
 /// A Move-tool press that Auto-Select found nothing under: start the marquee at `p`. The press
 /// started a Move gesture's snapping and ⇧/⌥ handling, which a marquee has none of.
-pub(crate) fn begin(app: &mut PhotocraftApp, p: [f64; 2], add: bool) {
-    app.layer_box = Some(LayerBox { start: p, end: p, add });
+pub(crate) fn begin(app: &mut PhotocraftApp, p: [f64; 2], add: bool, locked_hit: bool) {
+    app.layer_box = Some(LayerBox { start: p, end: p, add, locked_hit });
     app.prefs_rt.snap = None;
     app.prefs_rt.snap_lines.clear();
     app.move_mods = Default::default();
@@ -51,6 +53,11 @@ pub(crate) fn pointer(app: &mut PhotocraftApp, ev: ToolEvent) -> bool {
             app.layer_box = None;
             let (w, h) = (b.end[0] - b.start[0], b.end[1] - b.start[1]);
             if w == 0.0 || h == 0.0 {
+                // In Photoshop: clicking an empty spot or outside the canvas with Auto-Select
+                // deselects layers (unless ⇧ was held to add, or it hit a locked layer).
+                if !b.locked_hit && !b.add {
+                    let _ = app.run("select.deselectLayers", json!({}));
+                }
                 return true;
             }
             let target = app.ui.tool_options.move_target.clone();
@@ -133,5 +140,43 @@ mod tests {
         assert!(app.ui.dialogs.iter().all(|d| d.kind != crate::state::DialogKind::Error), "no lock dialog");
         assert!(app.layer_box.is_none());
         assert_eq!(app.session.active().unwrap().selected_layers(), vec![paint]);
+    }
+
+    /// Clicking on the pasteboard outside the canvas, or on an empty spot, deselects layers
+    /// when Auto-Select is on (like Photoshop). Shift-click adds and does not deselect.
+    #[test]
+    fn a_click_on_the_pasteboard_or_empty_spot_deselects_layers() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 64, "height": 64})).unwrap();
+        app.sync_views();
+        app.run("layer.new.layer", json!({})).unwrap();
+        let id = app.session.active().unwrap().active_layer.unwrap();
+        assert_eq!(app.session.active().unwrap().selected_layers(), vec![id]);
+
+        app.ui.tool = Tool::Move;
+        app.ui.tool_options.move_auto_select = true;
+
+        // Click on the pasteboard outside the canvas deselects layers
+        tool_event(&mut app, ToolEvent::Down { x: -10.0, y: -10.0, pressure: 1.0 }, egui::Modifiers::NONE);
+        tool_event(&mut app, ToolEvent::Up { x: -10.0, y: -10.0 }, egui::Modifiers::NONE);
+        assert!(app.session.active().unwrap().selected_layers().is_empty(), "click on pasteboard deselects layers");
+
+        // Re-select layer
+        app.run("layer.select", json!({"layer": id.0, "mode": "replace"})).unwrap();
+        assert_eq!(app.session.active().unwrap().selected_layers(), vec![id]);
+
+        // Shift-click on pasteboard does not deselect
+        tool_event(&mut app, ToolEvent::Down { x: -10.0, y: -10.0, pressure: 1.0 }, egui::Modifiers::SHIFT);
+        tool_event(&mut app, ToolEvent::Up { x: -10.0, y: -10.0 }, egui::Modifiers::SHIFT);
+        assert_eq!(app.session.active().unwrap().selected_layers(), vec![id], "Shift-click does not deselect");
+
+        // Delete the background layer so canvas is transparent
+        let bg = app.session.active().unwrap().doc.layers[0].id;
+        app.run("layer.delete", json!({"layer": bg.0})).unwrap();
+
+        // Click on an empty/transparent spot on the canvas deselects layers
+        tool_event(&mut app, ToolEvent::Down { x: 32.0, y: 32.0, pressure: 1.0 }, egui::Modifiers::NONE);
+        tool_event(&mut app, ToolEvent::Up { x: 32.0, y: 32.0 }, egui::Modifiers::NONE);
+        assert!(app.session.active().unwrap().selected_layers().is_empty(), "click on transparent canvas spot deselects layers");
     }
 }
