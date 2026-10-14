@@ -90,6 +90,9 @@ pub fn toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         .exact_size(w)
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(m, 8)))
         .show(ui, |ui| {
+            if app.session.active().is_none() {
+                ui.disable();
+            }
             if t.pro {
                 // Photoshop's toolbar header chevrons switch between one and two columns.
                 let (cr, resp) = ui.allocate_exact_size(vec2(bx, 14.0), Sense::click());
@@ -936,6 +939,9 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 if t.pro {
                     crate::chrome_ui::home_button(app, ui);
                     widgets::vline(ui, 22.0);
+                }
+                if app.session.active().is_none() {
+                    ui.disable();
                 }
                 let tool_icon = icons::button(ui, icons::tool_icon(app.ui.tool), if t.pro { 26.0 } else { 28.0 }, !t.pro, tl!(app.ui.tool.label()));
                 // Photoshop: right-click the tool icon for Reset Tool / Reset All Tools (#2825).
@@ -4364,6 +4370,28 @@ mod color_tests {
         h
     }
 
+    #[test]
+    fn home_screen_does_not_enable_the_toolbar_chevron() {
+        use egui_kittest::kittest::Queryable;
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(800.0, 1000.0)).build_ui_state(
+            |ui, app: &mut PhotocraftApp| {
+                toolbar(app, ui);
+            },
+            app,
+        );
+        PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::Pro);
+        h.run_steps(3);
+        h.get_by_label("Toolbar").click();
+        h.run_steps(2);
+        assert!(!h.state().ui.panels.toolbar_double);
+        h.state_mut().run("file.new", json!({"width": 64, "height": 64})).unwrap();
+        h.run_steps(2);
+        h.get_by_label("Toolbar").click();
+        h.run_steps(2);
+        assert!(h.state().ui.panels.toolbar_double);
+    }
+
     fn click(h: &mut egui_kittest::Harness<'_, PhotocraftApp>, p: egui::Pos2) {
         h.hover_at(p);
         h.run_steps(1);
@@ -5263,7 +5291,8 @@ mod toolbar_tests {
     /// #1197: the header chevron switches the toolbar between one and two columns.
     #[test]
     fn header_chevron_toggles_two_columns() {
-        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 64, "height": 64})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(vec2(800.0, 1400.0)).build_ui_state(
             |ui, app: &mut PhotocraftApp| {
                 if ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
