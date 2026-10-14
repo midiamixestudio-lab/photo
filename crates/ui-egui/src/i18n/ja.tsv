@@ -46,7 +46,7 @@
 	Edit	編集
 	Image	画像
 	Layer	レイヤー
-	Type	文字
+	Type	書式
 	Select	選択
 	Selected	選択済み
 	Scope	範囲
@@ -257,7 +257,7 @@
 	Hue/Saturation…	色相・彩度…
 	Color Balance…	カラーバランス…
 	Black & White…	白黒…
-	Photo Filter…	写真フィルター…
+	Photo Filter…	レンズフィルター…
 	Channel Mixer…	チャンネルミキサー…
 	Color Lookup…	カラールックアップ…
 	Invert	階調の反転
@@ -268,7 +268,7 @@
 	Shadows/Highlights…	シャドウ・ハイライト…
 	HDR Toning…	HDR トーン…
 	Desaturate	彩度を下げる
-	Match Color…	カラーを一致…
+	Match Color…	カラーの適用…
 	Replace Color…	色を置き換え…
 	Equalize	平均化
 	Auto Tone	自動トーン補正
@@ -283,7 +283,7 @@
 	Trim…	トリミング…
 	Reveal All	すべてのコンテンツを表示
 	Duplicate…	複製…
-	Apply Image…	画像を適用…
+	Apply Image…	画像操作…
 	Calculations…	演算…
 	Variables	変数
 	Define…	定義…
@@ -322,12 +322,12 @@
 	Duplicate Layer…	レイヤーを複製…
 	Delete Layer	レイヤーを削除
 	Delete	削除
-	Rename Layer	レイヤー名を変更
+	Rename Layer	レイヤー名の変更
 	Create Layer	レイヤーを作成
 	Layer Style	レイヤースタイル
 	Blending Options…	レイヤー効果…
 	Bevel & Emboss…	ベベルとエンボス…
-	Use Global Light	グローバルライトを使用
+	Use Global Light	包括光源を使用
 	Inner Shadow…	シャドウ (内側)…
 	Inner Glow…	光彩 (内側)…
 	Satin…	サテン…
@@ -339,7 +339,7 @@
 	Copy Layer Style	レイヤースタイルをコピー
 	Paste Layer Style	レイヤースタイルを貼り付け
 	Clear Layer Style	レイヤースタイルを消去
-	Global Light…	グローバル光源…
+	Global Light…	包括光源…
 	Hide All Effects	すべての効果を非表示
 	Scale Effects…	効果を拡大・縮小…
 	Smart Filter	スマートフィルター
@@ -428,7 +428,7 @@
 	Stamp Down	下のレイヤーにスタンプ
 	Flatten Image	画像を統合
 	Matting	マット処理
-	Color Decontaminate…	カラーの混入を除去…
+	Color Decontaminate…	不要なカラーの除去…
 	Remove Black Matte	黒マットを削除
 	Remove White Matte	白マットを削除
 	Defringe…	フリンジ削除…
@@ -440,7 +440,7 @@
 	Bring Forward	前面へ
 	Send Backward	背面へ
 	Send to Back	最背面へ
-	Reverse	反転
+	Reverse	逆順
 	Combine Shapes	シェイプを合成
 	Unite Shapes	シェイプを結合
 	Subtract Front Shape	前面シェイプで型抜き
@@ -468,8 +468,8 @@
 	All Layers	すべてのレイヤー
 	Hidden Layers	非表示のレイヤー
 	Mask All Objects	すべてのオブジェクトをマスク
-	Subject	被写体
-	Sky	空
+	Subject	被写体を選択
+	Sky	空を選択
 	Panels	パネル
 	Character Panel	文字パネル
 	Paragraph Panel	段落パネル
@@ -490,16 +490,17 @@
 	Standard Ligatures	標準合字
 	Contextual Alternates	文脈検索代替字形
 	Discretionary Ligatures	任意の合字
-	Swash	スワッシュ
+	Swash	スワッシュ字形
 	Oldstyle	オールドスタイル数字
 	Stylistic Alternates	スタイル代替字形
 	Titling Alternates	タイトル用代替字形
 	Ornaments	装飾記号
-	Ordinals	序数
-	Fractions	分数
+	Ordinals	上付き序数表記
+	Fractions	スラッシュを用いた分数
 	Create Work Path	作業用パスを作成
+	Make Work Path…	作業用パスを作成…
 	Convert to Shape	シェイプに変換
-	Warp Text…	文字ワープ…
+	Warp Text…	ワープ文字…
 	Convert to Point Text	ポイント文字に変換
 	Convert to Paragraph Text	段落文字に変換
 	Default Features	既定の機能
@@ -515,13 +516,14 @@
 	Medium	中
 	Large	大
 	Extra Large	特大
-	Huge	最大
+	Huge	超特大
 	Load Default Type Styles	既定の文字スタイルを読み込み
 	Save Default Type Styles	既定の文字スタイルを保存
 	Deselect	選択を解除
 	Reselect	再選択
-	Inverse	選択範囲を反転
+	Inverse	元画像を反転
 	Inverse Selection	選択範囲を反転
+	Select Inverse	選択範囲を反転
 	Similar	近似色を選択
 	Color Range…	色域指定…
 	Focus Area…	焦点領域…
@@ -529,7 +531,7 @@
 # Select and Mask dialog labels
 	Smart Radius	スマート半径
 	Shift Edge	エッジをシフト
-	Decontaminate	混入を除去
+	Decontaminate	不要なカラーを除去
 	Output	出力
 	Refine Edge	境界線を調整
 	Modify	選択範囲を修正
@@ -623,9 +625,9 @@
 	De-Interlace…	インターレース解除…
 	NTSC Colors	NTSC カラー
 	Other	その他
-	Maximum…	最大値…
-	Minimum…	最小値…
-	Offset…	オフセット…
+	Maximum…	明るさの最大値…
+	Minimum…	明るさの最小値…
+	Offset…	スクロール…
 	Plug-ins	プラグイン
 	Proof Setup	校正設定
 	Proof Colors	色の校正
@@ -685,7 +687,7 @@
 	Guides	ガイド
 	Canvas Guides	カンバスガイド
 	Artboard Guides	アートボードガイド
-	Count	カウント
+	Count	分割数
 	Smart Guides	スマートガイド
 	Slices	スライス
 	Notes	注釈
@@ -781,6 +783,7 @@
 	Paths	パス
 	Patterns	パターン
 	Properties	プロパティ
+	Replace	置き換え
 	Shapes	シェイプ
 	Styles	スタイル
 	Swatches	スウォッチ
@@ -874,7 +877,7 @@
 	Automatically level near-horizontal line segments	水平に近い線分を自動で水平にする
 	Automatically straighten and level	自動で傾きと水平を補正
 	Automatically straighten near-vertical line segments	垂直に近い線分を自動で垂直にする
-	Background	背景
+	Background	背景色
 	Background Color	背景色
 	Background Contents	背景の内容
 	Custom background color	カスタム背景色
@@ -929,6 +932,7 @@
 	Capture	取り込み
 	Capture the visibility, position and style of every layer with + below, then switch between versions.	下の + で、各レイヤーの表示状態・位置・スタイルを取り込み、バージョンを切り替えられます。
 	Catch-up on Stroke End	ストローク終了時に追いつく
+	Ccw	反時計回り
 	Center	中央
 	Center Crop Marks	中央のトンボ
 	Center text	中央揃え
@@ -978,7 +982,7 @@
 	Commit current crop operation  ({key})	現在の切り抜きを確定({key})
 	Commit transform ({key})	変形を確定({key})
 	Commit warp ({key})	ワープを確定({key})
-	Constant	一定
+	Constant	平行調整
 	Constrain proportions	縦横比を固定
 	Contact Sheet II	コンタクトシート II
 	Content-Aware	コンテンツに応じる
@@ -1024,6 +1028,7 @@
 	Curves	トーンカーブ
 	Custom	カスタム
 	Custom Shapes	カスタムシェイプ
+	Cw	時計回り
 	Cyan	シアン
 	Cyan  ·  Red	シアン · 赤
 	Darken	比較 (暗)
@@ -1153,13 +1158,13 @@
 	Font	フォント
 	Font Size:	フォントサイズ:
 	Font size	フォントサイズ
-	Foreground	前景
+	Foreground	前景色
 	Foreground to Background	描画色から背景色へ
 	Foreground/Background Jitter	描画色/背景色のジッター
 	Format	形式
 	Frame from Layers…	レイヤーからフレーム…
 	Free	自由
-	Full Spherical	全球
+	Full Spherical	完全な球面
 	Fuzziness:	許容量:
 	GPU	GPU
 	Gamma Correction	ガンマ補正
@@ -1232,7 +1237,7 @@
 	Left align text	左揃え
 	Length:	長さ:
 	Level	レベル
-	Levels	レベル補正
+	Levels	階調数
 	Lighten	比較 (明)
 	Lightness	明度
 	Lights	ライト
@@ -1286,6 +1291,7 @@
 	Move to	移動先
 	Name	名前
 	Name:	名前:
+	Nearest	ニアレスト
 	Nearest Neighbor	ニアレストネイバー
 	Nearest Neighbor (hard edges)	ニアレストネイバー (ハードエッジ)
 	New Size	新しいサイズ
@@ -1344,7 +1350,7 @@
 	Perceptual	知覚的
 	Perspective Warp is not active	遠近法ワープは有効ではありません
 	Perspective Warp: draw planes along the image's perspective, then switch to Warp	遠近法ワープ: 画像の遠近に沿って面を描き、ワープに切り替えます
-	Photo Filter	写真フィルター
+	Photo Filter	レンズフィルター
 	PhotoCraft	PhotoCraft
 	PhotoCraft Manages Colors	PhotoCraft でカラーを管理
 	PhotoCraft — an open-source, native image editor written in Rust.	PhotoCraft — Rust で書かれた、オープンソースのネイティブ画像エディター。
@@ -1413,8 +1419,8 @@
 	Remove stop	分岐点を削除
 	Remove variable	変数を削除
 	Rename	名前を変更
-	Rename Group…	グループ名を変更…
-	Rename Layer…	レイヤー名を変更…
+	Rename Group…	グループ名の変更…
+	Rename Layer…	レイヤー名の変更…
 	Rename Tool Preset…	ツールプリセット名を変更…
 	Rename…	名前を変更…
 	Resample	再サンプル
@@ -1542,12 +1548,12 @@
 	Thumbnail size (smallest: list)	サムネールのサイズ (最小: リスト)
 	Tilt X	傾き X
 	Tilt Y	傾き Y
-	Tint	色かぶり補正
+	Tint	着色
 	Toggle count group visibility	カウントグループの表示を切り替え
 	Toggle text orientation	文字の方向を切り替え
 	Tolerance	許容値
 	Tolerance:	許容値:
-	Tone:	トーン:
+	Tone:	階調:
 	Toolbar	ツールバー
 	Top	上
 	Total:	合計:
@@ -1663,7 +1669,8 @@
 	Document Profile	ドキュメントのプロファイル
 	Document Sizes	ドキュメントのサイズ
 	Dodge Tool	覆い焼きツール
-	Down	下
+	Up	上へ
+	Down	下へ
 	Drag to draw a gradient	ドラッグしてグラデーションを描画
 	Drag to move the active layer	ドラッグしてアクティブなレイヤーを移動
 	Drag to pan  ·  hold Space with any tool	ドラッグでパン · どのツールでも Space を押しながら
@@ -1685,7 +1692,8 @@
 	Fade	フェード
 	Fill Opacity	塗りの不透明度
 	Film & Video	フィルム・ビデオ
-	From	開始
+	From	始点
+	To	終点
 	General	一般
 	GitHub	GitHub
 	Gradient Overlay	グラデーションオーバーレイ
@@ -1795,7 +1803,7 @@
 	Reds	レッド系
 	Reflected	反射形
 	Sample: foreground colour	サンプル: 描画色
-	Sampled Colors	サンプルしたカラー
+	Sampled Colors	指定色域
 	Satin	サテン
 	Save Pixel Aspect Ratio	ピクセル縦横比を保存
 	Scattering	散布
@@ -2170,8 +2178,8 @@
 	Text color	文字色
 	Type Options	文字オプション
 	Anti-aliasing method	アンチエイリアスの種類
-	Horizontal type	横書き
-	Vertical type	縦書き
+	Horizontal type	横方向
+	Vertical type	縦方向
 	Fill path with foreground color	パスを描画色で塗りつぶす
 	Stroke path with brush	ブラシでパスの境界線を描く
 	Load path as a selection	パスを選択範囲として読み込む
@@ -2395,8 +2403,8 @@ cameraRaw	Color	カラー
 	Set White Point	白色点を設定
 	Unavailable in this color mode	このカラーモードでは使用できません
 	Selection Preview:	選択範囲のプレビュー:
-	Black Matte	黒の背景
-	White Matte	白の背景
+	Black Matte	黒マット
+	White Matte	白マット
 
 # Layer colour labels.
 	Seafoam	シーフォーム
@@ -2462,7 +2470,7 @@ fontWeight	Italic	斜体
 	Amplitude Max	振幅 (最大)
 	Amplitude Min	振幅 (最小)
 	Angled Strokes	斜めストローク
-	Anisotropic	異方性
+	Anisotropic	不均等に
 	Around Center	中心の周囲
 	Arrangement	配置
 	Artistic	芸術風
@@ -2475,7 +2483,7 @@ fontWeight	Italic	斜体
 	Black Clip	黒のクリップ
 	Black Intensity	黒の強さ
 	Blade Curvature	葉の湾曲
-	Blast	ブラスト
+	Blast	強く
 	Blocks	ブロック
 	Blur Angle	ぼかしの角度
 	Border Thickness	枠の太さ
@@ -2483,7 +2491,7 @@ fontWeight	Italic	斜体
 	Branches Height	枝の高さ
 	Branches Thickness	枝の太さ
 	Brick	レンガ
-	Bristle Detail	毛のディテール
+	Bristle Detail	密度の詳細
 	Brush Detail	ブラシのディテール
 	Brush Size	ブラシサイズ
 	Brush Stroke	ブラシストローク
@@ -2505,7 +2513,7 @@ fontWeight	Italic	斜体
 	Charcoal Thickness	木炭の太さ
 	Chrome	クローム
 	Circle	円
-	Cleanliness	清潔さ
+	Cleanliness	クリーン度
 	Clear Amount	クリアの量
 	Clumped	密集
 	Coarse Dots	粗いドット
@@ -2609,7 +2617,7 @@ fontWeight	Italic	斜体
 	Infinite	無限
 	Ink Outlines	インクの輪郭線
 	Input Mode	入力モード
-	Intensity	強さ
+	Intensity	適用度
 	Interpolation	補間
 	Interval	間隔
 	Ivy	アイビー
@@ -2623,7 +2631,7 @@ fontWeight	Italic	斜体
 	Left Diagonal	左斜め
 	Length	長さ
 	Lens	レンズ
-	Level Based	レベル基準
+	Level Based	レベルに合わせる
 	Light Dark Balance	明暗のバランス
 	Light Direction	光の方向
 	Light Intensity	光の強さ
@@ -2634,16 +2642,16 @@ fontWeight	Italic	斜体
 	Light Z	光源 Z
 	Lighten Grout	目地を明るく
 	Lighten Only	明るくのみ
-	Lighting	ライティング
+	Lighting	光源
 	List	リスト
 	Long Lines	長い線
 	Long Strokes	長いストローク
 	Low	低
-	Lower	下
+	Lower	指定レベル以下
 	Map Document	マップのドキュメント
 	Map Path	マップのパス
 	Margin	余白
-	Mask Incomplete Blocks	不完全なブロックをマスク
+	Mask Incomplete Blocks	大きさが足りない部分は作成しない
 	Max Offset	最大オフセット
 	Max Radius	最大半径
 	Medium Dots	中くらいのドット
@@ -2661,7 +2669,7 @@ fontWeight	Italic	斜体
 	Multiple Flames Path Directions	パス方向の複数の炎
 	Multiple Flames Various Length	長さの異なる複数の炎
 	Neon Glow	ネオン光彩
-	Neutralize	中和
+	Neutralize	色かぶりを補正
 	New Layer	新規レイヤー
 	Note Paper	ノート用紙
 	Number Of Levels	レベル数
@@ -2703,7 +2711,7 @@ fontWeight	Italic	斜体
 	Reduce Color Noise	カラーノイズを軽減
 	Reduce Noise	ノイズを軽減
 	Relief	レリーフ
-	Remove Jpeg Artifact	JPEG アーティファクトを除去
+	Remove Jpeg Artifact	JPEG の斑点を削除
 	Remove Tool	削除ツール
 	Reorder Layer	レイヤーを並べ替え
 	Repeat	繰り返し
@@ -2733,7 +2741,7 @@ fontWeight	Italic	斜体
 	Shadow Tone	シャドウのトーン
 	Sharpen Details	ディテールをシャープに
 	Sharpness	シャープネス
-	Shine	輝き
+	Shine	光彩
 	Short Lines	短い線
 	Short Strokes	短いストローク
 	Simple	シンプル
@@ -2755,7 +2763,7 @@ fontWeight	Italic	斜体
 	Sprayed Strokes	スプレーストローク
 	Sprinkles	散らし
 	Square Size	正方形のサイズ
-	Squareness	四角さ
+	Squareness	直角度
 	Stagger	互い違い
 	Stained Glass	ステンドグラス
 	Stamp	スタンプ
@@ -2772,7 +2780,7 @@ fontWeight	Italic	斜体
 	Stroke Pressure	ストロークの筆圧
 	Stroke Size	ストロークのサイズ
 	Stroke Width	ストロークの幅
-	Stylization	スタイル化
+	Stylization	形態
 	Sumi-e	墨絵
 	Switch Foreground and Background Colors	前景色と背景色を入れ替え
 	Taper	先細り
@@ -2789,11 +2797,11 @@ fontWeight	Italic	斜体
 	Transition	遷移
 	Triangle	三角形
 	Turbulent	乱流
-	Unaltered	変更なし
+	Unaltered	元画像
 	Undefined Areas	未定義の領域
 	Underpainting	下塗り
 	Uniform	均一
-	Upper	上
+	Upper	指定レベル以上
 	Use Custom Color	カスタムカラーを使用
 	Use Selection In Source	ソースの選択範囲を使用
 	Use Selection In Target	ターゲットの選択範囲を使用
@@ -2842,7 +2850,7 @@ fontWeight	Italic	斜体
 	Circularity	真円度
 	Clipping Path	クリッピングパス
 	Clone Stamp	コピースタンプ
-	Color Decontaminate	カラーの混入を除去
+	Color Decontaminate	不要なカラーの除去
 	Color Halftone	カラーハーフトーン
 	Color Range	色域指定
 	Color Replacement	色の置き換え
@@ -2882,7 +2890,7 @@ fontWeight	Italic	斜体
 	Flag	旗
 	Focus Area	焦点領域
 	Gaussian Blur	ぼかし (ガウス)
-	Global Light	グローバル光源
+	Global Light	包括光源
 	Gray Value (Maximum)	グレー値 (最大)
 	Gray Value (Mean)	グレー値 (平均)
 	Gray Value (Median)	グレー値 (中央値)
@@ -2911,7 +2919,7 @@ fontWeight	Italic	斜体
 	Make	作成
 	Make Selection	選択範囲を作成
 	Make Work Path	作業用パスを作成
-	Match Color	カラーを一致
+	Match Color	カラーの適用
 	Mezzotint	メゾティント
 	Mosaic	モザイク
 	Motion Blur	ぼかし(移動)
@@ -3002,7 +3010,7 @@ fontWeight	Italic	斜体
 	Add to	追加
 	Alternative	代替
 	Apply Data Set	データセットを適用
-	Apply Image	画像を適用
+	Apply Image	画像操作
 	Arbitrary	任意
 	Artboards to Files	アートボードをファイルへ
 	At	位置
@@ -3113,6 +3121,7 @@ fontWeight	Italic	斜体
 	Map Layer	マップレイヤー
 	Mask	マスク
 	Measure	測定
+	Merged	結合
 	Mono Contrast	モノコントラスト
 	New document	新規ドキュメント
 	Noise Color	ノイズ (カラー)
@@ -3666,8 +3675,8 @@ curves	Smooth	スムーズ
 	On Black	黒地
 	On White	白地
 	On Layers	レイヤー上
-	Show Edge	エッジを表示
-	Show Original	元の状態を表示
+	Show Edge	境界線を表示
+	Show Original	元の選択範囲を表示
 	F cycles the views; hold X to see the image	F で表示を切り替え、X を押している間は画像を表示
 # Select and Mask Refine Edge Brush (#2972)
 	Refine Edge Brush (R)	境界線調整ブラシ (R)
@@ -3815,3 +3824,10 @@ curves	Smooth	スムーズ
 	Reset All Locked Settings	ロックされた設定をすべて初期化
 	Copy Texture to Other Tools	テクスチャを他のツールにコピー
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
+
+# Pattern Overlay
+	Checkerboard	チェッカーボード
+	Diagonal Lines	斜線
+	Bricks	レンガ
+	Weave	織物
+	Paper Noise	紙の質感
