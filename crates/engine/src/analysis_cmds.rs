@@ -177,6 +177,7 @@ fn set_quiet(s: &mut Session, f: impl FnOnce(&mut Document)) -> Result<()> {
 pub(crate) fn compound<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Session) -> Result<R>) -> Result<R> {
     let st = s.active().ok_or(EngineError::NoDocument)?;
     let (before, history, prior) = (st.doc.clone(), st.history.clone(), st.layer_target());
+    let (anchor, coalesce) = (st.layer_anchor, st.coalesce.clone());
     let journal = s.journal.len();
     // Color Sampler points are view state a step may move (crop, rotation): roll them back too, so
     // a failed second step can't leave them pinned to pixels the restored document no longer has.
@@ -198,6 +199,10 @@ pub(crate) fn compound<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Sess
         }
         Err(e) => {
             st.doc = before;
+            // A nested edit may have selected a layer the rollback just removed (#4975).
+            crate::restore_target(st, prior);
+            st.layer_anchor = anchor;
+            st.coalesce = coalesce;
             st.color_samplers = samplers;
             st.revision += 1;
             st.last_damage = None;

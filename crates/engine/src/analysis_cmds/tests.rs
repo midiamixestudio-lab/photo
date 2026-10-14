@@ -292,6 +292,77 @@ fn place_scale_marker_builds_one_group_in_one_step() {
     assert!(d(&s).layers.iter().all(|l| l.name != "Measurement Scale Marker"));
 }
 
+fn refused_marker_text_restores_target(selection: &str) {
+    for depth in [8, 16, 32] {
+        let mut s = session(64, 64, depth);
+        let original = s.active().unwrap().active_layer.unwrap();
+        s.execute("layer.new.layer", json!({"name": "Original top"})).unwrap();
+        let top = s.active().unwrap().active_layer.unwrap();
+        // Seed a real coalesced edit, then establish a target that can be distinguished from
+        // the temporary bar. A range selection's anchor differs from its active layer.
+        s.execute("layer.renameLayer", json!({"name": "Before marker", "coalesce": "prior-edit"})).unwrap();
+        match selection {
+            "single" => s.select_layer(top).unwrap(),
+            "multiple" => {
+                s.execute("layer.select", json!({"layer": original.0})).unwrap();
+                s.execute("layer.select", json!({"layer": top.0, "mode": "range"})).unwrap();
+            }
+            "none" => {
+                s.execute("select.deselectLayers", json!({})).unwrap();
+            }
+            _ => panic!("unknown test selection"),
+        }
+        s.active_mut().unwrap().color_samplers = vec![[3.0, 7.0], [31.0, 47.0]];
+        let st = s.active().unwrap();
+        let before = st.doc.clone();
+        let target = (st.active_layer, st.selected_layers.clone(), st.layer_anchor);
+        let history = (st.history.past_len(), st.history.entries());
+        let samplers = st.color_samplers.clone();
+        let coalesce = st.coalesce.clone();
+        let journal = s.journal.clone();
+        s.authorize = Some(|id, _| if id == "type.create" { Err(EngineError::Other("refused marker text".into())) } else { Ok(()) });
+        let err = s.execute("image.analysis.placeScaleMarker", json!({"length": 16, "displayText": true})).unwrap_err();
+        assert!(err.to_string().contains("refused marker text"), "the nested public command was refused: {err}");
+        let st = s.active().unwrap();
+        assert_eq!(st.doc, before, "no part of a refused marker survives");
+        assert_eq!((st.history.past_len(), st.history.entries()), history, "no committed marker history");
+        assert_eq!(s.journal, journal, "no refused nested command is recorded");
+        assert_eq!(st.color_samplers, samplers, "rollback keeps Color Sampler view state");
+        let restored = (st.active_layer, st.selected_layers.clone(), st.layer_anchor);
+        let restored_coalesce = st.coalesce.clone();
+        let live_target = st.active_layer.is_none_or(|id| st.doc.layer(id).is_some());
+        s.authorize = None;
+        let next = if target.0.is_some() {
+            s.execute("layer.renameLayer", json!({"name": "After rollback"}))
+        } else {
+            s.execute("layer.new.layer", json!({"name": "After deselected rollback"}))
+        };
+        eprintln!("marker rollback {selection}/{depth}: prior={target:?} actual={restored:?} live={live_target} next={next:?} coalesce={restored_coalesce:?}");
+        assert_eq!(restored, target, "rollback restores the original target, not the removed bar");
+        assert!(live_target, "active layer exists in the restored document");
+        assert_eq!(restored_coalesce, coalesce, "rollback retains the previous edit's coalescing state");
+        assert!(next.is_ok(), "an ordinary subsequent layer command remains usable: {next:?}");
+        if let Some(id) = target.0 {
+            assert_eq!(s.active().unwrap().doc.layer(id).unwrap().name, "After rollback");
+        }
+    }
+}
+
+#[test]
+fn place_scale_marker_refused_text_restores_single_target() {
+    refused_marker_text_restores_target("single");
+}
+
+#[test]
+fn place_scale_marker_refused_text_restores_multi_target() {
+    refused_marker_text_restores_target("multiple");
+}
+
+#[test]
+fn place_scale_marker_refused_text_restores_deselected_target() {
+    refused_marker_text_restores_target("none");
+}
+
 #[test]
 fn place_scale_marker_on_a_short_document_errors_without_panicking() {
     // A document under 8 px tall inverted the bar-height clamp and panicked (#932). Call `run`
