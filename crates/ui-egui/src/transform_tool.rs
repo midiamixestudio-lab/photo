@@ -169,6 +169,19 @@ fn corners(r: [f64; 4]) -> [[f64; 2]; 4] {
     [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]
 }
 
+/// The interactive frame includes transparent selection margins (#5297). Keep the engine's
+/// content intersection as the empty-selection guard; whole-object layers retain their frame.
+pub(crate) fn frame_bounds(doc: &Document, layer: &photocraft_doc::Layer) -> photocraft_geom::Rect {
+    let content = photocraft_engine::transform_cmds::transform_bounds(doc, layer);
+    if !content.is_empty()
+        && !photocraft_engine::transform_cmds::moves_whole(layer)
+        && let Some(selection) = &doc.selection
+    {
+        return selection.content_bounds();
+    }
+    content
+}
+
 /// Start Free Transform on the active layer (or its selected pixels), or on the targeted unlinked
 /// layer mask, alpha channel or Quick Mask.
 pub fn begin(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), String> {
@@ -195,7 +208,7 @@ pub fn begin(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), String>
     if matches!(layer.content, LayerContent::Adjustment(_)) && layer.mask.is_none() {
         return Err("Adjustment layers have nothing to transform".into());
     }
-    let b = photocraft_engine::transform_cmds::transform_bounds(&doc, layer);
+    let b = frame_bounds(&doc, layer);
     if b.is_empty() {
         return Err("Could not transform: the layer is empty".into());
     }
@@ -4895,12 +4908,16 @@ mod tests {
         app.session.execute("file.new", json!({"width": 200, "height": 100})).unwrap();
         app.sync_views();
         app.run("type.create", json!({"x": 10, "y": 60, "text": "Hello"})).unwrap();
+        app.run("select.rect", json!({"x": 4, "y": 4, "width": 180, "height": 80})).unwrap();
+        let selection_bounds = app.session.active().unwrap().doc.selection.as_ref().unwrap().content_bounds();
         let ctx = egui::Context::default();
         let past = |app: &PhotocraftApp| app.session.active().unwrap().history.past_len();
         let before = past(&app);
         crate::menus::invoke(&mut app, &ctx, "edit.transform.warp", json!({})).unwrap();
         assert!(app.ui.dialogs.is_empty(), "no prompt");
         let w0 = app.ui.transform.as_ref().and_then(|t| t.warp.clone()).expect("Warp mode");
+        let document = app.session.active().unwrap().doc.id;
+        assert!(crate::transform_selection::session(&app, document).is_none(), "Warp Text does not carry the pixel selection");
         assert_eq!(w0.style, WarpStyle::None);
         // A drag on the grid changes nothing: type takes only the styles.
         let c = [(w0.bounds[0] + w0.bounds[2]) / 2.0, (w0.bounds[1] + w0.bounds[3]) / 2.0];
@@ -4917,6 +4934,7 @@ mod tests {
         commit(&mut app);
         assert!(!app.ui.status_error, "{}", app.ui.status);
         let st = app.session.active().unwrap();
+        assert_eq!(st.doc.selection.as_ref().unwrap().content_bounds(), selection_bounds, "Warp Text leaves the selection in place");
         let LayerContent::Text(t) = &st.doc.layer(st.active_layer.unwrap()).unwrap().content else { panic!("still type") };
         let tw = t.warp.as_ref().expect("Warp Text set");
         assert_eq!((tw.style.as_str(), tw.value, tw.horizontal), ("warpFlag", 40.0, true));

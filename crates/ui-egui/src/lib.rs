@@ -212,6 +212,7 @@ pub(crate) mod tool_memory;
 mod tool_reset;
 mod tool_shortcuts;
 pub mod transform_fx;
+mod transform_selection;
 pub mod transform_tex;
 pub mod transform_tool;
 mod type_font_preview;

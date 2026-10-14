@@ -113,6 +113,156 @@ fn free_transform_starts_where_the_selected_pixels_were_moved() {
     assert_eq!(st.doc.selection.as_ref().unwrap().content_bounds(), photocraft_geom::Rect::new(200, 150, 300, 210));
 }
 
+/// #5297: transparent margins belong to the selection's frame too.
+#[test]
+fn selection_transform_frames_the_selection_not_only_its_painted_pixels() {
+    let mut h = harness();
+    h.state_mut().run("select.rect", json!({"x": 50, "y": 50, "width": 200, "height": 150})).unwrap();
+    begin(&mut h);
+    assert_eq!(quad(&h), [[50.0, 50.0], [250.0, 50.0], [250.0, 200.0], [50.0, 200.0]]);
+}
+
+/// Check the actual painted ants, not just the transform's internal quad (#3402, figure 2).
+#[test]
+fn selection_transform_paints_the_moving_outline_before_confirmation() {
+    let mut h = harness();
+    h.state_mut().run("select.rect", json!({"x": 100, "y": 100, "width": 100, "height": 60})).unwrap();
+    begin(&mut h);
+    drag(&mut h, [130.0, 130.0], [230.0, 180.0]);
+    assert_eq!(quad(&h), [[200.0, 150.0], [300.0, 150.0], [300.0, 210.0], [200.0, 210.0]]);
+    let bounds = |h: &Harness<'static, PhotocraftApp>| {
+        h.output()
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Mesh(m)
+                    if m.vertices.iter().any(|v| v.color == egui::Color32::BLACK)
+                        && m.vertices.iter().all(|v| [egui::Color32::BLACK, egui::Color32::WHITE].contains(&v.color)) =>
+                {
+                    Some(m.calc_bounds())
+                }
+                _ => None,
+            })
+            .fold(egui::Rect::NOTHING, |a, b| a.union(b))
+    };
+    let expected = egui::Rect::from_min_max(screen(&h, [200.0, 150.0]), screen(&h, [300.0, 210.0]));
+    let painted = bounds(&h);
+    assert!(painted.min.distance(expected.min) < 2.0 && painted.max.distance(expected.max) < 2.0, "ants {painted:?}, transformed selection {expected:?}");
+    assert_eq!(
+        h.state().session.active().unwrap().doc.selection.as_ref().unwrap().content_bounds(),
+        photocraft_geom::Rect::new(100, 100, 200, 160),
+        "preview does not mutate the document"
+    );
+    key(&mut h, Modifiers::NONE, Key::Escape);
+    let original = egui::Rect::from_min_max(screen(&h, [100.0, 100.0]), screen(&h, [200.0, 160.0]));
+    assert!(bounds(&h).min.distance(original.min) < 2.0, "cancel restores the original outline");
+}
+
+/// #3402: changing layers applies the second move without reviving the original pixels.
+#[test]
+fn selection_transform_survives_switching_layers_after_a_floating_move() {
+    let mut h = harness();
+    let first = h.state().session.active().unwrap().active_layer.unwrap();
+    h.state_mut().run("layer.new.layer", json!({})).unwrap();
+    let second = h.state().session.active().unwrap().active_layer.unwrap();
+    h.state_mut().run("layer.select", json!({"layer": first.0})).unwrap();
+    h.state_mut().run("select.rect", json!({"x": 100, "y": 100, "width": 100, "height": 60})).unwrap();
+    drag(&mut h, [150.0, 130.0], [250.0, 180.0]);
+    begin(&mut h);
+    drag(&mut h, [230.0, 180.0], [250.0, 190.0]);
+    h.state_mut().run("layer.select", json!({"layer": second.0})).unwrap();
+    crate::transform_tool::end_if_left(h.state_mut());
+    h.run_steps(2);
+    assert!(h.state().ui.transform.is_none());
+    let st = h.state().session.active().unwrap();
+    assert_eq!(st.doc.layer(first).unwrap().surface().unwrap().content_bounds(), photocraft_geom::Rect::new(220, 160, 320, 220));
+    assert!(st.doc.layer(second).unwrap().surface().unwrap().content_bounds().is_empty());
+}
+
+#[test]
+fn selection_transform_outline_follows_modes_and_reuses_its_trace() {
+    use crate::state::TransformMode;
+    let mut h = harness();
+    h.state_mut().run("select.rect", json!({"x": 100, "y": 100, "width": 100, "height": 60})).unwrap();
+    begin(&mut h);
+    let trace = h.state().outline_cache.as_ref().unwrap().2.clone();
+    for (mode, quad) in [
+        (TransformMode::Free, [[80.0, 60.0], [280.0, 60.0], [280.0, 180.0], [80.0, 180.0]]),
+        (TransformMode::Rotate, [[200.0, 80.0], [200.0, 180.0], [140.0, 180.0], [140.0, 80.0]]),
+        (TransformMode::Skew, [[80.0, 60.0], [180.0, 60.0], [230.0, 120.0], [130.0, 120.0]]),
+        (TransformMode::Distort, [[80.0, 60.0], [240.0, 80.0], [220.0, 200.0], [100.0, 160.0]]),
+        (TransformMode::Perspective, [[120.0, 60.0], [180.0, 60.0], [220.0, 180.0], [80.0, 180.0]]),
+    ] {
+        let t = h.state_mut().ui.transform.as_mut().unwrap();
+        t.mode = mode;
+        t.quad = quad;
+        t.pivot = [(quad[0][0] + quad[2][0]) / 2.0, (quad[0][1] + quad[2][1]) / 2.0];
+        h.run_steps(2);
+        assert!(std::sync::Arc::ptr_eq(&trace, &h.state().outline_cache.as_ref().unwrap().2), "geometry changes reuse the source trace");
+        let expected = quad.iter().fold(egui::Rect::NOTHING, |r, &p| r.union(egui::Rect::from_min_max(screen(&h, p), screen(&h, p))));
+        let painted = transformed_outline_bounds(&h);
+        assert!(painted.min.distance(expected.min) < 2.0 && painted.max.distance(expected.max) < 2.0, "{mode:?}: ants {painted:?}, expected {expected:?}");
+    }
+    let ctx = h.ctx.clone();
+    crate::transform_tool::enter_warp(h.state_mut(), &ctx);
+    h.run_steps(2);
+    let before = transformed_outline_bounds(&h);
+    // A curved top edge: corner-only mapping would keep the ants straight.
+    let t = h.state_mut().ui.transform.as_mut().unwrap();
+    let mesh = t.warp.as_mut().unwrap().mesh.as_mut().unwrap();
+    mesh.points[1][1] -= 60.0;
+    mesh.points[2][1] -= 60.0;
+    h.run_steps(2);
+    assert!(transformed_outline_bounds(&h).top() < before.top() - 20.0, "ants follow the curved Warp edge");
+    assert!(std::sync::Arc::ptr_eq(&trace, &h.state().outline_cache.as_ref().unwrap().2));
+}
+
+fn transformed_outline_bounds(h: &Harness<'static, PhotocraftApp>) -> egui::Rect {
+    h.output()
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::Mesh(m)
+                if m.vertices.iter().any(|v| v.color == egui::Color32::BLACK)
+                    && m.vertices.iter().all(|v| [egui::Color32::BLACK, egui::Color32::WHITE].contains(&v.color)) =>
+            {
+                Some(m.calc_bounds())
+            }
+            egui::Shape::LineSegment { points, stroke } if stroke.color == egui::Color32::WHITE && stroke.width == 1.0 => {
+                Some(egui::Rect::from_two_pos(points[0], points[1]))
+            }
+            _ => None,
+        })
+        .fold(egui::Rect::NOTHING, |a, b| a.union(b))
+}
+
+#[test]
+fn selection_transform_preserves_margin_geometry_through_commit_undo_and_redo() {
+    let mut h = harness();
+    h.state_mut().run("select.rect", json!({"x": 50, "y": 50, "width": 200, "height": 150})).unwrap();
+    begin(&mut h);
+    h.state_mut().ui.transform.as_mut().unwrap().quad = [[50.0, 50.0], [450.0, 50.0], [450.0, 350.0], [50.0, 350.0]];
+    h.state_mut().ui.transform.as_mut().unwrap().interpolation = "nearest".into();
+    key(&mut h, Modifiers::NONE, Key::Enter);
+    let bounds = |h: &Harness<'static, PhotocraftApp>| {
+        let st = h.state().session.active().unwrap();
+        (
+            st.doc.selection.as_ref().unwrap().content_bounds(),
+            photocraft_compose::bounds::content_bounds(st.doc.layer(st.active_layer.unwrap()).unwrap().surface().unwrap()),
+        )
+    };
+    let after = bounds(&h);
+    // Selection coverage is bilinear even with nearest-neighbour image sampling: preserve its
+    // one-pixel antialiased fringe rather than treating every nonzero sample as a hard edge.
+    assert_eq!(after.0, photocraft_geom::Rect::new(49, 49, 451, 351));
+    // The image is scaled around the selection frame, including its transparent margins.
+    assert_eq!(after.1, photocraft_geom::Rect::new(150, 150, 350, 270));
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    assert_eq!(bounds(&h), (photocraft_geom::Rect::new(50, 50, 250, 200), photocraft_geom::Rect::new(100, 100, 200, 160)));
+    h.state_mut().run("edit.redo", json!({})).unwrap();
+    assert_eq!(bounds(&h), after);
+}
+
 /// Scale ×2, then down again, then ⌘Z: back to the ×2 box, not the fill before the transform.
 #[test]
 fn undo_steps_back_through_the_transform_not_the_document() {

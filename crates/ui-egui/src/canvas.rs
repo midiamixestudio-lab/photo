@@ -3046,7 +3046,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             // (not the document revision) so unrelated edits don't re-trace it. The step is in
             // device pixels per document pixel (`View::zoom`, not the point zoom), so a 1 px
             // selection still traces at 100% on a scaled display.
-            let step = (1.0 / (view.zoom * k as f32).max(1e-3)).log2().floor().exp2().clamp(1.0, 64.0) as u32;
+            let mut step = (1.0 / (view.zoom * k as f32).max(1e-3)).log2().floor().exp2().clamp(1.0, 64.0) as u32;
             let corners = [rect.min, pos2(rect.max.x, rect.min.y), rect.max, pos2(rect.min.x, rect.max.y)];
             let docs = [xf.to_doc(corners[0]), xf.to_doc(corners[1]), xf.to_doc(corners[2]), xf.to_doc(corners[3])];
             let mut x0 = docs[0][0];
@@ -3064,12 +3064,17 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             // The view centre can be any finite number (`ui.set`, #980). Past ±2³⁰ there is no document
             // to outline, and the padding below (at most 2 · 256 · 64) can't overflow i32 from there.
             let px = |v: f64| v.clamp(-f64::from(1 << 30), f64::from(1 << 30)) as i32;
-            let vis = photocraft_geom::Rect::new(
+            let mut vis = photocraft_geom::Rect::new(
                 px(x0.floor()).div_euclid(q) * q - q,
                 px(y0.floor()).div_euclid(q) * q - q,
                 (px(x1.ceil()).div_euclid(q) + 2) * q,
                 (px(y1.ceil()).div_euclid(q) + 2) * q,
             );
+            let transforming = primary && crate::transform_selection::session(app, doc.id).is_some();
+            if transforming {
+                vis = app.cached_bounds(u64::MAX - doc.id.0, sel);
+                step = crate::transform_selection::trace_step(vis, step);
+            }
             let key = crate::surface_fingerprint(sel)
                 ^ (step as u64) << 56
                 ^ doc.id.0.rotate_left(17)
@@ -3096,7 +3101,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                 app.outline_cache = Some((doc.id, key, std::sync::Arc::new(segs)));
             }
             // Under Content-Aware Move's Transform On Drop box the ants are drawn where it puts them.
-            if let Some((_, _, segs)) = app.outline_cache.as_ref().filter(|_| !crate::cam_transform::active(app)) {
+            if let Some((_, _, segs)) = app.outline_cache.as_ref().filter(|_| !crate::cam_transform::active(app) && !transforming) {
                 let time = ui.input(|i| i.time);
                 // A floating piece (and a selection being dragged) draws its ants where it is shown.
                 let mut shown = xf;
@@ -3675,6 +3680,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         }
         crate::type_tool::draw_overlay(app, &painter, &xf);
         crate::transform_tool::draw_overlay(app, &painter, &xf);
+        crate::transform_selection::draw(app, &painter, &xf, doc.id);
         crate::cam_transform::draw(app, &painter, &xf);
         crate::cam_preview::wake(app, painter.ctx());
         crate::distort_ui::draw_overlay(app, &painter, &xf);
@@ -3919,6 +3925,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     }
     if primary && hand_pan && response.dragged() {
         crate::transform_tool::draw_overlay(app, &painter, &xf);
+        crate::transform_selection::draw(app, &painter, &xf, doc.id);
     }
     app.tool_override = None;
     if let Some(b) = layer_edges_rect(app, idx) {
@@ -4093,6 +4100,10 @@ fn marching_ants_segments(painter: &egui::Painter, xf: &ViewXform, segs: &[crate
 /// [`marching_ants_segments`] with each outline point placed on screen by `to_screen` (a
 /// transformed outline: Content-Aware Move's Transform On Drop).
 pub(crate) fn marching_ants_mapped(painter: &egui::Painter, segs: &[crate::outline::Segment], time: f64, to_screen: impl Fn([i32; 2]) -> Pos2) {
+    marching_ants_screen(painter, segs.iter().map(|(a, b)| [to_screen(*a), to_screen(*b)]), time);
+}
+
+pub(crate) fn marching_ants_screen(painter: &egui::Painter, segments: impl IntoIterator<Item = [Pos2; 2]>, time: f64) {
     let dash = 4.0f32;
     let phase = ((time * 10.0) % (dash as f64 * 2.0)) as f32;
     let clip = painter.clip_rect();
@@ -4110,9 +4121,7 @@ pub(crate) fn marching_ants_mapped(painter: &egui::Painter, segs: &[crate::outli
         mesh.add_triangle(i, i + 1, i + 2);
         mesh.add_triangle(i, i + 2, i + 3);
     };
-    for (a, b) in segs {
-        let pa = to_screen(*a);
-        let pb = to_screen(*b);
+    for [pa, pb] in segments {
         if !clip.intersects(Rect::from_two_pos(pa, pb).expand(1.0)) {
             continue;
         }
@@ -4501,7 +4510,7 @@ fn transform_controls_rect(app: &PhotocraftApp, xf: &ViewXform) -> Option<Rect> 
     if crate::doc_props_ui::is_background(&st.doc, l) {
         return None;
     }
-    let b = photocraft_engine::transform_cmds::transform_bounds(&st.doc, l);
+    let b = crate::transform_tool::frame_bounds(&st.doc, l);
     let (dx, dy) = crate::move_ui::floating_offset(app).unwrap_or((0, 0));
     let b = b.translate(dx, dy);
     if b.is_empty() {
@@ -7614,6 +7623,24 @@ mod tests {
 mod transform_controls_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn selection_transform_controls_include_transparent_selection_margins() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 400, "height": 300})).unwrap();
+        app.run("layer.new.layer", json!({})).unwrap();
+        app.run("select.rect", json!({"x": 100, "y": 100, "width": 100, "height": 60})).unwrap();
+        app.run("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        app.run("select.rect", json!({"x": 50, "y": 50, "width": 200, "height": 150})).unwrap();
+        app.ui.tool = Tool::Move;
+        app.ui.tool_options.move_show_transform = true;
+        let xf =
+            ViewXform { rect: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0)), zoom: 1.0, center: [200.0, 150.0], flip: false, rotation: 0.0, aspect: 1.0 };
+        let expected = Rect::from_min_max(pos2(50.0, 50.0), pos2(250.0, 200.0));
+        assert_eq!(transform_controls_rect(&app, &xf), Some(expected));
+        assert!(begin_transform_controls_at(&mut app, &egui::Context::default(), &xf, expected.left_top()));
+        assert_eq!(app.ui.transform.as_ref().unwrap().rect, [50.0, 50.0, 250.0, 200.0]);
+    }
 
     #[test]
     fn move_transform_controls_start_free_transform_for_vector_shapes() {
